@@ -1,0 +1,6 @@
+{
+  "name": "TXS HUB",
+  "description": "El centro de control para alumnos, pagos, eventos y experiencias de Texano Show.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
