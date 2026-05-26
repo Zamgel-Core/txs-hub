@@ -45,6 +45,9 @@ ${fullName}
 Correo:
 ${email}
 
+Contraseña solicitada:
+${password}
+
 Mensaje:
 Solicito acceso al portal de alumnos TXS HUB.
 
