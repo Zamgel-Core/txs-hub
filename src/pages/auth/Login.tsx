@@ -67,41 +67,59 @@ Pendiente de validación por administración.
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = data.user;
 
       if (!user) {
-        throw new Error("No se pudo obtener el usuario.");
+        throw new Error("No se encontró el usuario.");
       }
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("role, is_active")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error(profileError);
+        throw new Error("Error obteniendo perfil.");
+      }
 
-      if (!profile?.is_active) {
+      if (!profile) {
+        throw new Error("Perfil no encontrado.");
+      }
+
+      if (!profile.is_active) {
+        throw new Error("Tu cuenta está desactivada.");
+      }
+
+      if (selectedRole === "admin" && profile.role !== "admin") {
         await supabase.auth.signOut();
-        throw new Error(
-          "Tu cuenta está desactivada. Contacta a administración.",
-        );
+        throw new Error("Este usuario no pertenece al portal admin.");
+      }
+
+      if (selectedRole === "alumno" && profile.role !== "alumno") {
+        await supabase.auth.signOut();
+        throw new Error("Este usuario no pertenece al portal alumno.");
       }
 
       if (profile.role === "admin") {
         navigate("/admin");
-      } else {
-        navigate("/alumno");
+        return;
       }
+
+      if (profile.role === "alumno") {
+        navigate("/alumno");
+        return;
+      }
+
+      throw new Error("Rol inválido.");
     } catch (error) {
       const authError = error as Error;
       setMessage(authError.message || "Ocurrió un error. Intenta nuevamente.");
@@ -261,7 +279,7 @@ Pendiente de validación por administración.
                   ? "Procesando..."
                   : mode === "login"
                     ? "Iniciar sesión"
-                    : "Enviar informacion"}
+                    : "Enviar solicitud"}
               </Button>
             </form>
 

@@ -1,17 +1,17 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+// 📍 Ruta del archivo: src/App.tsx
 
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PublicLayout } from "@/src/components/layouts/PublicLayout";
 import { AdminLayout } from "@/src/components/layouts/AdminLayout";
 import { AlumnoLayout } from "@/src/components/layouts/AlumnoLayout";
+import { ProtectedRoute } from "@/src/components/auth/ProtectedRoute";
+
 import { Landing } from "@/src/pages/public/Landing";
 import { Terminos } from "@/src/pages/public/Terminos";
 import { Privacidad } from "@/src/pages/public/Privacidad";
 import { Reglamento } from "@/src/pages/public/Reglamento";
 import { Login } from "@/src/pages/auth/Login";
+
 import { AdminDashboard } from "@/src/pages/admin/AdminDashboard";
 import { Alumnos } from "@/src/pages/admin/Alumnos";
 import { Pagos } from "@/src/pages/admin/Pagos";
@@ -21,16 +21,17 @@ import { Avisos } from "@/src/pages/admin/Avisos";
 import { Eventos } from "@/src/pages/admin/Eventos";
 import { Reportes } from "@/src/pages/admin/Reportes";
 import { Configuracion } from "@/src/pages/admin/Configuracion";
+
 import { AlumnoDashboard } from "@/src/pages/alumno/AlumnoDashboard";
 import { AlumnoEventos } from "@/src/pages/alumno/AlumnoEventos";
 import { AlumnoPagos } from "@/src/pages/alumno/AlumnoPagos";
+
 import { NotFound } from "@/src/pages/NotFound";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Rutas Públicas */}
         <Route element={<PublicLayout />}>
           <Route path="/" element={<Landing />} />
           <Route path="/terminos" element={<Terminos />} />
@@ -40,8 +41,14 @@ export default function App() {
 
         <Route path="/login" element={<Login />} />
 
-        {/* Rutas Admin */}
-        <Route path="/admin" element={<AdminLayout />}>
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<AdminDashboard />} />
           <Route path="alumnos" element={<Alumnos />} />
           <Route path="grupos" element={<Grupos />} />
@@ -53,8 +60,14 @@ export default function App() {
           <Route path="configuracion" element={<Configuracion />} />
         </Route>
 
-        {/* Rutas Alumno */}
-        <Route path="/alumno" element={<AlumnoLayout />}>
+        <Route
+          path="/alumno"
+          element={
+            <ProtectedRoute allowedRoles={["alumno"]}>
+              <AlumnoLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<AlumnoDashboard />} />
           <Route path="eventos" element={<AlumnoEventos />} />
           <Route path="pagos" element={<AlumnoPagos />} />
