@@ -1,124 +1,280 @@
+// 📍 Ruta del archivo: src/pages/auth/Login.tsx
+
 import { Link, useNavigate } from "react-router-dom";
 import { useState, FormEvent } from "react";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 import { Card, CardContent } from "@/src/components/ui/Card";
-import { Users, LayoutDashboard, User } from "lucide-react";
+import { Users, LayoutDashboard } from "lucide-react";
 import { motion } from "motion/react";
+import { supabase } from "@/src/lib/supabase";
 
 export function Login() {
-  const [role, setRole] = useState<'admin' | 'instructor' | 'alumno'>('alumno');
   const navigate = useNavigate();
 
-  const handleLogin = (e: FormEvent) => {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [selectedRole, setSelectedRole] = useState<"alumno" | "admin">(
+    "alumno",
+  );
+
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const handleAuth = async (e: FormEvent) => {
     e.preventDefault();
-    if (role === 'admin') navigate('/admin');
-    else navigate('/alumno');
+    setLoading(true);
+    setMessage("");
+
+    try {
+      // Registro como solicitud manual
+      if (mode === "register") {
+        const subject = encodeURIComponent(
+          "Nueva solicitud de registro TXS HUB",
+        );
+
+        const body = encodeURIComponent(`
+Nueva solicitud de registro TXS HUB
+
+Nombre completo:
+${fullName}
+
+Correo:
+${email}
+
+Mensaje:
+Solicito acceso al portal de alumnos TXS HUB.
+
+Pendiente de validación por administración.
+`);
+
+        window.open(
+          `https://mail.google.com/mail/?view=cm&fs=1&to=registro@txshub.com&su=${subject}&body=${body}`,
+          "_blank",
+        );
+
+        setMessage(
+          "Se abrirá tu aplicación de correo para enviar la solicitud.",
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("No se pudo obtener el usuario.");
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role, is_active")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      if (!profile?.is_active) {
+        await supabase.auth.signOut();
+        throw new Error(
+          "Tu cuenta está desactivada. Contacta a administración.",
+        );
+      }
+
+      if (profile.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/alumno");
+      }
+    } catch (error) {
+      const authError = error as Error;
+      setMessage(authError.message || "Ocurrió un error. Intenta nuevamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-txs-black relative overflow-hidden px-4">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gold-500/10 via-txs-black to-txs-black pointer-events-none mix-blend-screen"></div>
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-[0.05] mix-blend-color-dodge pointer-events-none"></div>
-      
-      <motion.div 
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gold-500/10 via-txs-black to-txs-black pointer-events-none mix-blend-screen" />
+      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-[0.05] mix-blend-color-dodge pointer-events-none" />
+
+      <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 2, ease: "easeOut" }}
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gold-500/5 blur-[120px] rounded-full pointer-events-none"
       />
-      
+
       <div className="w-full max-w-md z-10 relative">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="text-center mb-8 relative"
         >
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-[150px] bg-gold-500/10 blur-[50px] rounded-full pointer-events-none"></div>
           <Link to="/" className="inline-block relative z-10 group">
-            <div className="absolute -inset-4 bg-gold-500/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
-            <img src="/branding/logo_TSX.png" alt="TXS HUB Logo" className="h-20 sm:h-24 w-auto mx-auto drop-shadow-[0_0_15px_rgba(212,175,55,0.3)] group-hover:scale-105 transition-transform duration-500 relative z-10" />
+            <img
+              src="/branding/logo_TSX.png"
+              alt="TXS HUB Logo"
+              className="h-20 sm:h-24 w-auto mx-auto drop-shadow-[0_0_15px_rgba(212,175,55,0.3)] group-hover:scale-105 transition-transform duration-500"
+            />
           </Link>
-          <p className="text-zinc-400 mt-6 font-light tracking-wide">Accede a tu portal exclusivo</p>
+
+          <p className="text-zinc-400 mt-6 font-light tracking-wide">
+            {mode === "login"
+              ? "Accede a tu portal exclusivo"
+              : "Crea tu cuenta de alumno"}
+          </p>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <Card className="bg-txs-card/90 backdrop-blur-2xl border-zinc-800/80 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-br from-gold-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
-            <CardContent className="p-6 sm:p-8 relative z-10">
-              <form onSubmit={handleLogin} className="space-y-8">
-                <div className="grid grid-cols-3 gap-3">
+        <Card className="bg-txs-card/90 backdrop-blur-2xl border-zinc-800/80 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden group">
+          <CardContent className="p-6 sm:p-8 relative z-10">
+            <div className="grid grid-cols-2 gap-3 mb-8">
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className={`rounded-xl border p-3 text-sm font-bold transition-all ${
+                  mode === "login"
+                    ? "border-gold-500 bg-gold-500/10 text-gold-400"
+                    : "border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Iniciar sesión
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMode("register")}
+                className={`rounded-xl border p-3 text-sm font-bold transition-all ${
+                  mode === "register"
+                    ? "border-gold-500 bg-gold-500/10 text-gold-400"
+                    : "border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Registrarse
+              </button>
+            </div>
+
+            <form onSubmit={handleAuth} className="space-y-6">
+              {mode === "login" && (
+                <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setRole('alumno')}
+                    onClick={() => setSelectedRole("alumno")}
                     className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border text-xs sm:text-sm font-medium transition-all duration-300 ${
-                      role === 'alumno' 
-                        ? 'border-gold-500 bg-gold-500/10 text-gold-400 shadow-[0_0_15px_rgba(212,175,55,0.2)] scale-105' 
-                        : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800/80 hover:border-zinc-700 hover:text-zinc-300'
+                      selectedRole === "alumno"
+                        ? "border-gold-500 bg-gold-500/10 text-gold-400 shadow-[0_0_15px_rgba(212,175,55,0.2)] scale-105"
+                        : "border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800/80 hover:border-zinc-700 hover:text-zinc-300"
                     }`}
                   >
-                    <Users className={`w-5 h-5 transition-transform duration-300 ${role === 'alumno' ? 'scale-110' : ''}`} />
+                    <Users className="w-5 h-5" />
                     <span>Alumno</span>
                   </button>
+
                   <button
                     type="button"
-                    onClick={() => setRole('instructor')}
+                    onClick={() => setSelectedRole("admin")}
                     className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border text-xs sm:text-sm font-medium transition-all duration-300 ${
-                      role === 'instructor' 
-                        ? 'border-gold-500 bg-gold-500/10 text-gold-400 shadow-[0_0_15px_rgba(212,175,55,0.2)] scale-105' 
-                        : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800/80 hover:border-zinc-700 hover:text-zinc-300'
+                      selectedRole === "admin"
+                        ? "border-gold-500 bg-gold-500/10 text-gold-400 shadow-[0_0_15px_rgba(212,175,55,0.2)] scale-105"
+                        : "border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800/80 hover:border-zinc-700 hover:text-zinc-300"
                     }`}
                   >
-                    <User className={`w-5 h-5 transition-transform duration-300 ${role === 'instructor' ? 'scale-110' : ''}`} />
-                    <span>Instructor</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRole('admin')}
-                    className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border text-xs sm:text-sm font-medium transition-all duration-300 ${
-                      role === 'admin' 
-                        ? 'border-gold-500 bg-gold-500/10 text-gold-400 shadow-[0_0_15px_rgba(212,175,55,0.2)] scale-105' 
-                        : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800/80 hover:border-zinc-700 hover:text-zinc-300'
-                    }`}
-                  >
-                    <LayoutDashboard className={`w-5 h-5 transition-transform duration-300 ${role === 'admin' ? 'scale-110' : ''}`} />
+                    <LayoutDashboard className="w-5 h-5" />
                     <span>Admin</span>
                   </button>
                 </div>
+              )}
 
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">Correo Electrónico</label>
-                    <Input type="email" placeholder="correo@ejemplo.com" required className="border-zinc-700/50 bg-zinc-900/50 h-12 focus:border-gold-500/50 focus:ring-gold-500/20 transition-all font-sans" />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">Contraseña</label>
-                      <Link to="#" className="text-xs font-medium text-gold-500 hover:text-gold-400 transition-colors">¿Olvidaste tu contraseña?</Link>
-                    </div>
-                    <Input type="password" placeholder="••••••••" required className="border-zinc-700/50 bg-zinc-900/50 h-12 focus:border-gold-500/50 focus:ring-gold-500/20 transition-all" />
-                  </div>
+              {mode === "register" && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
+                    Nombre completo
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Nombre del alumno"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
                 </div>
+              )}
 
-                <Button type="submit" variant="gold" className="w-full h-12 text-sm font-bold tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.2)] hover:shadow-[0_0_30px_rgba(212,175,55,0.4)] group overflow-hidden relative">
-                  <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-                  <span className="relative z-10 transition-colors duration-300 text-txs-black group-hover:text-black">Iniciar Sesión</span>
-                </Button>
-              </form>
-
-              <div className="mt-8 text-center text-sm text-zinc-500">
-                <Link to="/" className="inline-flex items-center gap-2 hover:text-gold-400 transition-colors font-medium group">
-                  <span className="transform group-hover:-translate-x-1 transition-transform">&larr;</span> Regresar al inicio
-                </Link>
+              <div className="space-y-2">
+                <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
+                  Correo electrónico
+                </label>
+                <Input
+                  type="email"
+                  placeholder="correo@ejemplo.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
+                  Contraseña
+                </label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                />
+              </div>
+
+              {message && (
+                <div className="rounded-xl border border-gold-500/20 bg-gold-500/10 p-3 text-sm text-gold-300">
+                  {message}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                variant="gold"
+                disabled={loading}
+                className="w-full h-12 text-sm font-bold tracking-widest uppercase shadow-[0_0_20px_rgba(212,175,55,0.2)] hover:shadow-[0_0_30px_rgba(212,175,55,0.4)]"
+              >
+                {loading
+                  ? "Procesando..."
+                  : mode === "login"
+                    ? "Iniciar sesión"
+                    : "Enviar informacion"}
+              </Button>
+            </form>
+
+            <div className="mt-8 text-center text-sm text-zinc-500">
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 hover:text-gold-400 transition-colors font-medium group"
+              >
+                <span className="transform group-hover:-translate-x-1 transition-transform">
+                  &larr;
+                </span>{" "}
+                Regresar al inicio
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
