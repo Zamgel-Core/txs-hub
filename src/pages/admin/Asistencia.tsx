@@ -1,133 +1,369 @@
-import { useState } from "react";
-import { Check, X, AlertCircle } from "lucide-react";
-import { mockAlumnos, mockGrupos } from "@/src/data";
-import { Button } from "@/src/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { useEffect, useState } from "react";
+import { AlertCircle, Check, Loader2, Save, X } from "lucide-react";
+
+import { Button } from "../../components/ui/Button";
+
+import { Card, CardContent } from "../../components/ui/Card";
+
+import { supabase } from "../../lib/supabase";
+
+type Group = {
+  id: string;
+  name: string;
+  instructor: string;
+  schedule: string;
+  level: string;
+};
+
+type Student = {
+  id: string;
+  full_name: string;
+  membership_type: string | null;
+  group_id: string | null;
+};
+
+type AttendanceStatus = "presente" | "falta" | "retardo";
 
 export function Asistencia() {
-  const [selectedGrupo, setSelectedGrupo] = useState("");
-  const [selectedFecha, setSelectedFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [groups, setGroups] = useState<Group[]>([]);
 
-  // En una app real, leeríamos la tabla de Asistencia y cruzaríamos datos
-  const alumnosGrupo = mockAlumnos.filter(a => selectedGrupo ? a.grupoId === selectedGrupo : false);
+  const [students, setStudents] = useState<Student[]>([]);
 
-  const [asistencias, setAsistencias] = useState<Record<string, 'Presente' | 'Ausente' | 'Justificado'>>({});
+  const [selectedGroup, setSelectedGroup] = useState("");
 
-  const handleMarcar = (alumnoId: string, estado: 'Presente' | 'Ausente' | 'Justificado') => {
-    setAsistencias(prev => ({ ...prev, [alumnoId]: estado }));
-  };
+  const [loading, setLoading] = useState(false);
 
-  const handlesGuardar = () => {
-    alert("Asistencia guardada correctamente (Mock)");
-  };
+  const [saving, setSaving] = useState(false);
+
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
+
+  const [attendance, setAttendance] = useState<
+    Record<string, AttendanceStatus>
+  >({});
+
+  useEffect(() => {
+    loadGroups();
+  }, []);
+
+  useEffect(() => {
+    if (selectedGroup) {
+      loadStudents(selectedGroup);
+    }
+  }, [selectedDate]);
+
+  async function loadGroups() {
+    const { data, error } = await supabase
+      .from("groups")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+
+    if (error) {
+      console.error("Error cargando grupos:", error);
+      return;
+    }
+
+    setGroups(data || []);
+  }
+
+  async function loadStudents(groupId: string) {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("students")
+      .select("*")
+      .eq("group_id", groupId)
+      .eq("is_active", true)
+      .order("full_name");
+
+    if (error) {
+      console.error("Error cargando alumnos:", error);
+
+      setLoading(false);
+      return;
+    }
+
+    const studentsData = data || [];
+
+    setStudents(studentsData);
+
+    // ✅ CARGAR ASISTENCIA EXISTENTE
+    const { data: attendanceData } = await supabase
+      .from("attendance")
+      .select("*")
+      .eq("attendance_date", selectedDate);
+
+    if (attendanceData) {
+      const existingAttendance: Record<string, AttendanceStatus> = {};
+
+      attendanceData.forEach((item) => {
+        existingAttendance[item.student_id] = item.status;
+      });
+
+      setAttendance(existingAttendance);
+    }
+
+    setLoading(false);
+  }
+
+  function handleSelectGroup(groupId: string) {
+    setSelectedGroup(groupId);
+    setAttendance({});
+
+    if (groupId) {
+      loadStudents(groupId);
+    } else {
+      setStudents([]);
+    }
+  }
+
+  function handleMarkAttendance(studentId: string, status: AttendanceStatus) {
+    setAttendance((prev) => ({
+      ...prev,
+      [studentId]: status,
+    }));
+  }
+
+  async function handleSaveAttendance() {
+    if (!selectedGroup) return;
+
+    setSaving(true);
+
+    try {
+      const attendanceRows = students.map((student) => ({
+        student_id: student.id,
+        attendance_date: selectedDate,
+        status: attendance[student.id] || "presente",
+      }));
+
+      const { error } = await supabase
+        .from("attendance")
+        .insert(attendanceRows);
+
+      if (error) {
+        console.error("Error guardando asistencia:", error);
+
+        alert("Ocurrió un error al guardar la asistencia.");
+
+        setSaving(false);
+        return;
+      }
+
+      alert("Asistencia guardada correctamente.");
+    } catch (error) {
+      console.error(error);
+
+      alert("Ocurrió un error inesperado.");
+    }
+
+    setSaving(false);
+  }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-display font-bold text-white">Asistencia</h1>
+      <div>
+        <h1 className="text-4xl font-bold text-white">Asistencia</h1>
 
-      <Card className="border border-zinc-800/80 shadow-lg">
-        <div className="p-4 sm:p-6 border-b border-zinc-800/80 flex flex-col sm:flex-row gap-5 items-center bg-zinc-900/30 rounded-t-xl">
-          <div className="w-full sm:w-auto flex-1">
-            <label className="block text-sm font-medium text-zinc-400 mb-2">Grupo de Clase</label>
-            <select 
-              className="w-full bg-zinc-900/50 border border-zinc-800/80 text-base md:text-sm rounded-lg px-4 h-12 text-zinc-200 outline-none focus:ring-2 focus:ring-gold-500/20 focus:border-gold-500/50 transition-all duration-300"
-              value={selectedGrupo}
-              onChange={(e) => setSelectedGrupo(e.target.value)}
-            >
-              <option value="">Selecciona un grupo para empezar...</option>
-              {mockGrupos.map(g => (
-                <option key={g.id} value={g.id}>{g.nombre} ({g.instructor})</option>
-              ))}
-            </select>
-          </div>
-          <div className="w-full sm:w-[250px]">
-            <label className="block text-sm font-medium text-zinc-400 mb-2">Fecha</label>
-            <input 
-              type="date"
-              className="w-full bg-zinc-900/50 border border-zinc-800/80 text-base md:text-sm rounded-lg px-4 h-12 text-zinc-200 outline-none focus:ring-2 focus:ring-gold-500/20 focus:border-gold-500/50 transition-all duration-300"
-              value={selectedFecha}
-              onChange={(e) => setSelectedFecha(e.target.value)}
-            />
+        <p className="text-zinc-500 mt-2">
+          Control de asistencia en tiempo real.
+        </p>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="p-5 border-b border-zinc-800 bg-zinc-900/30">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2">
+              <label className="block text-sm text-zinc-400 mb-2">
+                Grupo de Clase
+              </label>
+
+              <select
+                value={selectedGroup}
+                onChange={(e) => handleSelectGroup(e.target.value)}
+                className="w-full h-12 rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/40"
+              >
+                <option value="">Selecciona un grupo...</option>
+
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name} • {group.schedule} ({group.level})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm text-zinc-400 mb-2">Fecha</label>
+
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-full h-12 rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/40"
+              />
+            </div>
           </div>
         </div>
 
         <CardContent className="p-0">
-          {!selectedGrupo ? (
-            <div className="py-24 px-4 text-center text-zinc-500 flex flex-col items-center relative overflow-hidden">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.03] pointer-events-none mix-blend-screen w-[300px]">
-                <img src="/branding/sombrero_TSX.png" alt="" className="w-full h-auto grayscale" />
+          {!selectedGroup ? (
+            <div className="py-24 px-6 text-center">
+              <div className="w-20 h-20 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center mx-auto mb-6">
+                <img
+                  src="/branding/sombrero_TSX.png"
+                  alt=""
+                  className="w-10 opacity-40"
+                />
               </div>
-              <div className="w-20 h-20 rounded-full bg-zinc-900/80 border border-zinc-800 flex items-center justify-center mb-6 relative z-10 shadow-lg">
-                <img src="/branding/sombrero_TSX.png" alt="" className="w-10 h-10 object-contain opacity-50" />
-              </div>
-              <p className="text-xl font-display font-medium text-zinc-300 relative z-10">Selecciona un grupo</p>
-              <p className="text-sm mt-2 max-w-sm relative z-10">Elige un grupo de la lista para comenzar a pasar asistencia de los alumnos.</p>
+
+              <h2 className="text-2xl font-semibold text-white">
+                Selecciona un grupo
+              </h2>
+
+              <p className="text-zinc-500 mt-3 max-w-md mx-auto">
+                Elige un grupo para comenzar a pasar asistencia.
+              </p>
+            </div>
+          ) : loading ? (
+            <div className="py-24 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 text-yellow-400 animate-spin" />
             </div>
           ) : (
-            <div className="overflow-x-auto w-full">
-              <table className="w-full text-left text-sm text-zinc-400 whitespace-nowrap">
-                <thead className="bg-zinc-900/50 text-zinc-300 font-medium">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-zinc-900/40 border-b border-zinc-800">
                   <tr>
-                    <th className="px-6 py-4 w-full md:w-1/2">Alumno</th>
-                    <th className="px-6 py-4 text-right">Marcar Asistencia</th>
+                    <th className="px-6 py-4 text-zinc-400 text-sm">Alumno</th>
+
+                    <th className="px-6 py-4 text-right text-zinc-400 text-sm">
+                      Asistencia
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800/80">
-                  {alumnosGrupo.map((alumno) => (
-                    <tr key={alumno.id} className="hover:bg-zinc-900/30 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-sm text-white">
-                            {alumno.nombre.charAt(0)}
+
+                <tbody className="divide-y divide-zinc-800">
+                  {students.map((student) => (
+                    <tr
+                      key={student.id}
+                      className="hover:bg-zinc-900/20 transition-colors"
+                    >
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="w-11 h-11 rounded-full bg-zinc-800 flex items-center justify-center text-white font-bold">
+                            {student.full_name.charAt(0)}
                           </div>
+
                           <div>
-                            <div className="font-medium text-white text-base md:text-sm">{alumno.nombre}</div>
-                            <div className="text-xs text-zinc-500">{alumno.plan}</div>
+                            <p className="text-white font-medium">
+                              {student.full_name}
+                            </p>
+
+                            <p className="text-zinc-500 text-sm capitalize">
+                              {student.membership_type || "Sin membresía"}
+                            </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="inline-flex gap-2">
-                          <Button 
-                            variant={asistencias[alumno.id] === 'Presente' ? 'default' : 'outline'}
-                            onClick={() => handleMarcar(alumno.id, 'Presente')}
+
+                      <td className="px-6 py-5">
+                        <div className="flex justify-end gap-2">
+                          <Button
                             size="sm"
-                            className={`h-10 md:h-9 ${asistencias[alumno.id] === 'Presente' ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-md' : 'hover:text-emerald-500 hover:border-emerald-500'}`}
+                            onClick={() =>
+                              handleMarkAttendance(student.id, "presente")
+                            }
+                            className={`${
+                              attendance[student.id] === "presente"
+                                ? "bg-emerald-600 hover:bg-emerald-700 border-emerald-600"
+                                : ""
+                            }`}
+                            variant={
+                              attendance[student.id] === "presente"
+                                ? "default"
+                                : "outline"
+                            }
                           >
-                            <Check className="w-5 h-5 md:w-4 md:h-4 sm:mr-2" /> <span className="hidden sm:inline">Presente</span>
+                            <Check className="w-4 h-4 sm:mr-2" />
+
+                            <span className="hidden sm:inline">Presente</span>
                           </Button>
-                          <Button 
-                            variant={asistencias[alumno.id] === 'Ausente' ? 'default' : 'outline'}
-                            onClick={() => handleMarcar(alumno.id, 'Ausente')}
+
+                          <Button
                             size="sm"
-                            className={`h-10 md:h-9 ${asistencias[alumno.id] === 'Ausente' ? 'bg-red-600 hover:bg-red-700 text-white border-red-600 shadow-md' : 'hover:text-red-500 hover:border-red-500'}`}
+                            onClick={() =>
+                              handleMarkAttendance(student.id, "falta")
+                            }
+                            className={`${
+                              attendance[student.id] === "falta"
+                                ? "bg-red-600 hover:bg-red-700 border-red-600"
+                                : ""
+                            }`}
+                            variant={
+                              attendance[student.id] === "falta"
+                                ? "default"
+                                : "outline"
+                            }
                           >
-                            <X className="w-5 h-5 md:w-4 md:h-4 sm:mr-2" /> <span className="hidden sm:inline">Ausente</span>
+                            <X className="w-4 h-4 sm:mr-2" />
+
+                            <span className="hidden sm:inline">Falta</span>
                           </Button>
-                          <Button 
-                            variant={asistencias[alumno.id] === 'Justificado' ? 'default' : 'outline'}
-                            onClick={() => handleMarcar(alumno.id, 'Justificado')}
+
+                          <Button
                             size="sm"
-                            className={`h-10 md:h-9 ${asistencias[alumno.id] === 'Justificado' ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600 shadow-md' : 'hover:text-amber-500 hover:border-amber-500'}`}
+                            onClick={() =>
+                              handleMarkAttendance(student.id, "retardo")
+                            }
+                            className={`${
+                              attendance[student.id] === "retardo"
+                                ? "bg-amber-600 hover:bg-amber-700 border-amber-600"
+                                : ""
+                            }`}
+                            variant={
+                              attendance[student.id] === "retardo"
+                                ? "default"
+                                : "outline"
+                            }
                           >
-                            <AlertCircle className="w-5 h-5 md:w-4 md:h-4 sm:mr-2" /> <span className="hidden sm:inline">Justific.</span>
+                            <AlertCircle className="w-4 h-4 sm:mr-2" />
+
+                            <span className="hidden sm:inline">Retardo</span>
                           </Button>
                         </div>
                       </td>
                     </tr>
                   ))}
-                  {alumnosGrupo.length === 0 && (
+
+                  {students.length === 0 && (
                     <tr>
-                      <td colSpan={2} className="px-6 py-8 text-center text-zinc-500">
+                      <td
+                        colSpan={2}
+                        className="px-6 py-16 text-center text-zinc-500"
+                      >
                         No hay alumnos registrados en este grupo.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
-              {alumnosGrupo.length > 0 && (
-                <div className="p-4 sm:p-6 border-t border-zinc-800 flex justify-end bg-zinc-900/20 rounded-b-xl">
-                  <Button variant="gold" onClick={handlesGuardar} className="w-full sm:w-auto h-12 sm:h-10">Guardar Lista de Asistencia</Button>
+
+              {students.length > 0 && (
+                <div className="p-5 border-t border-zinc-800 bg-zinc-900/20 flex justify-end">
+                  <Button
+                    variant="gold"
+                    className="h-11 px-6"
+                    onClick={handleSaveAttendance}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    Guardar asistencia
+                  </Button>
                 </div>
               )}
             </div>

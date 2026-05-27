@@ -1,471 +1,735 @@
 // 📍 Ruta del archivo: src/pages/admin/Alumnos.tsx
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Filter, RefreshCw, Edit, Save } from "lucide-react";
-
-import { Button } from "@/src/components/ui/Button";
-import { Input } from "@/src/components/ui/Input";
-import { Card, CardContent } from "@/src/components/ui/Card";
-import { Badge } from "@/src/components/ui/Badge";
-import { Modal } from "@/src/components/ui/Modal";
-
 import { supabase } from "@/src/lib/supabase";
+import {
+  Edit,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Users,
+  X,
+} from "lucide-react";
 
-type GroupLevel = "principiante" | "avanzado";
-
-type Student = {
+interface Student {
   id: string;
   full_name: string;
-  phone: string | null;
   email: string;
-  group_level: GroupLevel;
-  temporary_password: string | null;
+  phone: string;
+  group_level: string;
+  temporary_password: string;
   is_active: boolean;
-  notes: string | null;
-  created_at: string;
-  updated_at?: string;
-};
+  group_id?: string | null;
+}
 
-const EMPTY_FORM = {
+interface Group {
+  id: string;
+  name: string;
+  schedule: string;
+  level: string;
+  days?: string | null;
+  sort_order?: number | null;
+}
+
+const emptyForm = {
   id: "",
   full_name: "",
   email: "",
   phone: "",
-  group_level: "principiante" as GroupLevel,
+  group_id: "",
   temporary_password: "",
   is_active: true,
-  notes: "",
 };
 
 export function Alumnos() {
   const [students, setStudents] = useState<Student[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterGroup, setFilterGroup] = useState<GroupLevel | "Todos">("Todos");
+  const [groups, setGroups] = useState<Group[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [selectedGroupFilter, setSelectedGroupFilter] = useState("all");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
 
-  const [editingStudent, setEditingStudent] =
-    useState<typeof EMPTY_FORM>(EMPTY_FORM);
+  const [form, setForm] = useState(emptyForm);
 
-  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    loadStudents();
+    loadGroups();
+  }, []);
+
+  async function loadGroups() {
+    const { data, error } = await supabase
+      .from("groups")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setGroups(data || []);
+  }
 
   async function loadStudents() {
     setLoading(true);
-    setMessage("");
 
     const { data, error } = await supabase
       .from("students")
       .select("*")
-      .order("group_level", { ascending: true })
       .order("full_name", { ascending: true });
 
     if (error) {
       console.error(error);
-      setMessage("No se pudieron cargar los alumnos.");
-      setStudents([]);
-    } else {
-      setStudents(data || []);
+      setLoading(false);
+      return;
     }
 
+    setStudents(data || []);
     setLoading(false);
   }
 
-  useEffect(() => {
-    loadStudents();
-  }, []);
-
   const filteredStudents = useMemo(() => {
-    const term = searchTerm.toLowerCase().trim();
-
     return students.filter((student) => {
+      const safePhone = student.phone || "";
+      const safeEmail = student.email || "";
+      const safeName = student.full_name || "";
+
       const matchesSearch =
-        student.full_name.toLowerCase().includes(term) ||
-        student.email.toLowerCase().includes(term) ||
-        (student.phone || "").includes(term);
+        safeName.toLowerCase().includes(search.toLowerCase()) ||
+        safeEmail.toLowerCase().includes(search.toLowerCase()) ||
+        safePhone.includes(search);
 
       const matchesGroup =
-        filterGroup === "Todos" || student.group_level === filterGroup;
+        selectedGroupFilter === "all"
+          ? true
+          : student.group_id === selectedGroupFilter;
 
       return matchesSearch && matchesGroup;
     });
-  }, [students, searchTerm, filterGroup]);
+  }, [students, search, selectedGroupFilter]);
+
+  function getGroupInfo(groupId?: string | null) {
+    if (!groupId) {
+      return {
+        name: "Sin grupo",
+        schedule: "Sin horario",
+        days: "",
+        level: "",
+      };
+    }
+
+    const group = groups.find((g) => g.id === groupId);
+
+    if (!group) {
+      return {
+        name: "Sin grupo",
+        schedule: "Sin horario",
+        days: "",
+        level: "",
+      };
+    }
+
+    return {
+      name: group.name,
+      schedule: group.schedule,
+      days: group.days || "",
+      level: group.level || "",
+    };
+  }
+
+  function openCreateModal() {
+    setModalMode("create");
+    setForm(emptyForm);
+    setIsModalOpen(true);
+  }
 
   function openEditModal(student: Student) {
-    setEditingStudent({
+    setModalMode("edit");
+
+    setForm({
       id: student.id,
       full_name: student.full_name || "",
       email: student.email || "",
       phone: student.phone || "",
-      group_level: student.group_level,
+      group_id: student.group_id || "",
       temporary_password: student.temporary_password || "",
       is_active: student.is_active,
-      notes: student.notes || "",
     });
 
     setIsModalOpen(true);
   }
 
-  async function handleSaveStudent(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleCreateStudent() {
+    try {
+      setCreating(true);
 
-    setSaving(true);
+      if (
+        !form.full_name ||
+        !form.email ||
+        !form.phone ||
+        !form.group_id ||
+        !form.temporary_password
+      ) {
+        alert("Completa todos los campos.");
+        return;
+      }
 
-    const { error } = await supabase
-      .from("students")
-      .update({
-        full_name: editingStudent.full_name,
-        email: editingStudent.email,
-        phone: editingStudent.phone,
-        group_level: editingStudent.group_level,
-        temporary_password: editingStudent.temporary_password,
-        is_active: editingStudent.is_active,
-        notes: editingStudent.notes,
-      })
-      .eq("id", editingStudent.id);
+      const selectedGroup = groups.find((group) => group.id === form.group_id);
 
-    setSaving(false);
+      if (!selectedGroup) {
+        alert("Grupo inválido.");
+        return;
+      }
 
-    if (error) {
-      console.error(error);
-      alert("No se pudo actualizar el alumno.");
-      return;
+      const { data, error } = await supabase.functions.invoke(
+        "create-student-user",
+        {
+          body: {
+            full_name: form.full_name,
+            email: form.email,
+            phone: form.phone,
+            group_id: selectedGroup.id,
+            group_level: selectedGroup.level,
+            temporary_password: form.temporary_password,
+          },
+        },
+      );
+
+      if (error) {
+        console.error(error);
+        alert("Error creando alumno.");
+        return;
+      }
+
+      console.log(data);
+
+      await loadStudents();
+
+      setForm(emptyForm);
+      setIsModalOpen(false);
+
+      alert("Alumno creado correctamente.");
+    } catch (err) {
+      console.error(err);
+      alert("Ocurrió un error inesperado.");
+    } finally {
+      setCreating(false);
     }
-
-    setIsModalOpen(false);
-
-    await loadStudents();
-
-    alert("Alumno actualizado correctamente.");
   }
 
-  const getGroupBadge = (group: GroupLevel) => {
-    if (group === "avanzado") {
-      return <Badge variant="success">Avanzado</Badge>;
+  async function handleUpdateStudent() {
+    try {
+      setSaving(true);
+
+      if (!form.id || !form.full_name || !form.email || !form.phone) {
+        alert("Completa nombre, correo y teléfono.");
+        return;
+      }
+
+      const selectedGroup = groups.find((group) => group.id === form.group_id);
+
+      const { error } = await supabase
+        .from("students")
+        .update({
+          full_name: form.full_name,
+          email: form.email,
+          phone: form.phone,
+          group_id: form.group_id || null,
+          group_level: selectedGroup?.level || "principiante",
+          temporary_password: form.temporary_password,
+          is_active: form.is_active,
+        })
+        .eq("id", form.id);
+
+      if (error) {
+        console.error(error);
+        alert("No se pudo actualizar el alumno.");
+        return;
+      }
+
+      await loadStudents();
+
+      setForm(emptyForm);
+      setIsModalOpen(false);
+
+      alert("Alumno actualizado correctamente.");
+    } catch (err) {
+      console.error(err);
+      alert("Ocurrió un error inesperado.");
+    } finally {
+      setSaving(false);
     }
-
-    return <Badge variant="warning">Principiante</Badge>;
-  };
-
-  const getStatusBadge = (isActive: boolean) => {
-    return isActive ? (
-      <Badge variant="success">Activo</Badge>
-    ) : (
-      <Badge variant="neutral">Inactivo</Badge>
-    );
-  };
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="min-h-screen bg-black text-white px-4 sm:px-6 lg:px-10 py-6 lg:py-8">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5 mb-8">
         <div>
-          <h1 className="text-3xl font-display font-bold text-white">
+          <h1 className="text-4xl sm:text-5xl font-black tracking-tight">
             Alumnos
           </h1>
 
-          <p className="text-sm text-zinc-500 mt-1">
+          <p className="text-zinc-500 mt-2">
             {students.length} alumnos registrados en TXS HUB
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <Button
-            variant="ghost"
-            className="gap-2 w-full sm:w-auto"
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <button
             onClick={loadStudents}
-            disabled={loading}
+            className="flex items-center justify-center gap-2 border border-zinc-800 hover:border-yellow-500/40 px-4 py-3 rounded-xl transition-all"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw size={18} />
             Actualizar
-          </Button>
+          </button>
 
-          <Button variant="gold" className="gap-2 w-full sm:w-auto">
-            <Plus className="w-4 h-4" />
+          <button
+            onClick={openCreateModal}
+            className="bg-yellow-500 hover:bg-yellow-400 text-black font-semibold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+          >
+            <Plus size={18} />
             Agregar Alumno
-          </Button>
+          </button>
         </div>
       </div>
 
-      {message && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
-          {message}
-        </div>
-      )}
+      <div className="bg-[#090909] border border-yellow-500/20 rounded-3xl overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-zinc-900 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
+          <div className="relative">
+            <Search
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500"
+              size={18}
+            />
 
-      <Card>
-        <div className="p-4 border-b border-zinc-800 flex flex-col sm:flex-row gap-4 justify-between items-center bg-zinc-900/20">
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-
-            <Input
+            <input
+              type="text"
               placeholder="Buscar por nombre, correo o teléfono..."
-              className="pl-9"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-[#111111] border border-zinc-800 rounded-xl pl-11 pr-4 py-3 outline-none focus:border-yellow-500/40"
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter className="w-4 h-4 text-zinc-400" />
+          <select
+            value={selectedGroupFilter}
+            onChange={(e) => setSelectedGroupFilter(e.target.value)}
+            className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+          >
+            <option value="all">Todos los grupos</option>
 
-            <select
-              className="w-full sm:w-auto bg-zinc-900/50 border border-zinc-800/80 text-base md:text-sm rounded-lg px-4 h-12 md:h-10 text-zinc-200 outline-none focus:ring-2 focus:ring-gold-500/20 focus:border-gold-500/50 transition-all duration-300"
-              value={filterGroup}
-              onChange={(e) =>
-                setFilterGroup(e.target.value as GroupLevel | "Todos")
-              }
-            >
-              <option value="Todos">Todos los grupos</option>
-              <option value="principiante">Principiante</option>
-              <option value="avanzado">Avanzado</option>
-            </select>
-          </div>
+            {groups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name} • {group.schedule}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <CardContent className="p-0">
-          <div className="overflow-x-auto w-full">
-            <table className="w-full text-left text-sm text-zinc-400">
-              <thead className="bg-zinc-900/50 text-zinc-300 font-medium whitespace-nowrap">
+        <div className="hidden lg:block overflow-auto">
+          <table className="w-full min-w-[1050px]">
+            <thead className="bg-[#0d0d0d]">
+              <tr className="text-left text-zinc-500 text-sm">
+                <th className="px-6 py-4">Nombre</th>
+                <th className="px-6 py-4">Teléfono</th>
+                <th className="px-6 py-4">Correo</th>
+                <th className="px-6 py-4">Grupo real</th>
+                <th className="px-6 py-4">Horario</th>
+                <th className="px-6 py-4">Password temporal</th>
+                <th className="px-6 py-4">Estado</th>
+                <th className="px-6 py-4 text-right">Acciones</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loading ? (
                 <tr>
-                  <th className="px-6 py-4">Nombre</th>
-                  <th className="px-6 py-4">Teléfono</th>
-                  <th className="px-6 py-4">Correo</th>
-                  <th className="px-6 py-4">Grupo</th>
-                  <th className="px-6 py-4">Password temporal</th>
-                  <th className="px-6 py-4">Estado</th>
-                  <th className="px-6 py-4 text-right">Acciones</th>
+                  <td colSpan={8} className="text-center py-20 text-zinc-500">
+                    Cargando alumnos...
+                  </td>
                 </tr>
-              </thead>
+              ) : (
+                filteredStudents.map((student) => {
+                  const groupInfo = getGroupInfo(student.group_id);
 
-              <tbody className="divide-y divide-zinc-800/80">
-                {loading && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-6 py-10 text-center text-zinc-500"
-                    >
-                      Cargando alumnos...
-                    </td>
-                  </tr>
-                )}
-
-                {!loading &&
-                  filteredStudents.map((student) => (
+                  return (
                     <tr
                       key={student.id}
-                      className="hover:bg-zinc-900/30 transition-colors whitespace-nowrap"
+                      className="border-t border-zinc-900 hover:bg-[#0d0d0d] transition-all"
                     >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 flex-shrink-0 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xs text-white">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="w-11 h-11 rounded-full bg-zinc-800 flex items-center justify-center font-bold shrink-0">
                             {student.full_name.charAt(0)}
                           </div>
 
-                          <div>
-                            <div className="font-medium text-white">
+                          <div className="min-w-0">
+                            <p className="font-semibold leading-tight">
                               {student.full_name}
-                            </div>
+                            </p>
 
-                            <div className="text-xs text-zinc-500">
+                            <p className="text-xs text-zinc-500 mt-1">
                               ID: {student.id.slice(0, 8)}
-                            </div>
+                            </p>
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 font-mono text-xs">
-                        {student.phone || "—"}
+                      <td className="px-6 py-5 text-zinc-300">
+                        {student.phone}
                       </td>
 
-                      <td className="px-6 py-4">{student.email}</td>
-
-                      <td className="px-6 py-4">
-                        {getGroupBadge(student.group_level)}
+                      <td className="px-6 py-5 text-zinc-300">
+                        {student.email}
                       </td>
 
-                      <td className="px-6 py-4 font-mono text-xs text-gold-300">
+                      <td className="px-6 py-5">
+                        <span className="bg-zinc-800 text-zinc-200 px-3 py-1 rounded-full text-sm">
+                          {groupInfo.name}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-5 text-zinc-500">
+                        <p>{groupInfo.schedule}</p>
+                        {groupInfo.days && (
+                          <p className="text-xs text-zinc-600 mt-1">
+                            {groupInfo.days}
+                          </p>
+                        )}
+                      </td>
+
+                      <td className="px-6 py-5 text-yellow-400 font-semibold">
                         {student.temporary_password || "—"}
                       </td>
 
-                      <td className="px-6 py-4">
-                        {getStatusBadge(student.is_active)}
+                      <td className="px-6 py-5">
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                            student.is_active
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : "bg-red-500/20 text-red-400"
+                          }`}
+                        >
+                          {student.is_active ? "Activo" : "Inactivo"}
+                        </span>
                       </td>
 
-                      <td className="px-6 py-4 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="gap-2 text-gold-400 hover:text-gold-300"
+                      <td className="px-6 py-5 text-right">
+                        <button
                           onClick={() => openEditModal(student)}
+                          className="inline-flex items-center gap-2 text-yellow-400 hover:text-yellow-300 font-semibold transition-all"
                         >
-                          <Edit className="w-4 h-4" />
+                          <Edit size={16} />
                           Editar
-                        </Button>
+                        </button>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })
+              )}
 
-                {!loading && filteredStudents.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-6 py-8 text-center text-zinc-500"
+              {!loading && filteredStudents.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center py-20 text-zinc-500">
+                    No se encontraron alumnos.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="lg:hidden divide-y divide-zinc-900">
+          {loading ? (
+            <div className="py-16 text-center text-zinc-500">
+              Cargando alumnos...
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="py-16 text-center text-zinc-500">
+              No se encontraron alumnos.
+            </div>
+          ) : (
+            filteredStudents.map((student) => {
+              const groupInfo = getGroupInfo(student.group_id);
+
+              return (
+                <div key={student.id} className="p-4 sm:p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-11 h-11 rounded-full bg-zinc-800 flex items-center justify-center font-bold shrink-0">
+                        {student.full_name.charAt(0)}
+                      </div>
+
+                      <div className="min-w-0">
+                        <h3 className="text-white font-bold leading-tight">
+                          {student.full_name}
+                        </h3>
+
+                        <p className="text-xs text-zinc-500 mt-1">
+                          ID: {student.id.slice(0, 8)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
+                        student.is_active
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : "bg-red-500/20 text-red-400"
+                      }`}
                     >
-                      No se encontraron alumnos.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+                      {student.is_active ? "Activo" : "Inactivo"}
+                    </span>
+                  </div>
 
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Editar Alumno"
-      >
-        <form onSubmit={handleSaveStudent} className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-2">
-              <label className="text-sm text-zinc-400">Nombre completo</label>
+                  <div className="grid grid-cols-1 gap-3 text-sm">
+                    <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+                      <p className="text-zinc-500 text-xs mb-1">Correo</p>
+                      <p className="text-zinc-200 break-all">{student.email}</p>
+                    </div>
 
-              <Input
-                value={editingStudent.full_name}
-                onChange={(e) =>
-                  setEditingStudent((prev) => ({
-                    ...prev,
-                    full_name: e.target.value,
-                  }))
-                }
-              />
-            </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+                        <p className="text-zinc-500 text-xs mb-1">Teléfono</p>
+                        <p className="text-zinc-200">{student.phone}</p>
+                      </div>
 
-            <div className="space-y-2">
-              <label className="text-sm text-zinc-400">
-                Correo electrónico
-              </label>
+                      <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+                        <p className="text-zinc-500 text-xs mb-1">Password</p>
+                        <p className="text-yellow-400 font-semibold">
+                          {student.temporary_password || "—"}
+                        </p>
+                      </div>
+                    </div>
 
-              <Input
-                type="email"
-                value={editingStudent.email}
-                onChange={(e) =>
-                  setEditingStudent((prev) => ({
-                    ...prev,
-                    email: e.target.value,
-                  }))
-                }
-              />
-            </div>
+                    <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+                      <p className="text-zinc-500 text-xs mb-1">Grupo</p>
+                      <p className="text-zinc-200 font-semibold">
+                        {groupInfo.name}
+                      </p>
+                      <p className="text-zinc-500 text-xs mt-1">
+                        {groupInfo.days
+                          ? `${groupInfo.days} • ${groupInfo.schedule}`
+                          : groupInfo.schedule}
+                      </p>
+                    </div>
+                  </div>
 
-            <div className="space-y-2">
-              <label className="text-sm text-zinc-400">Teléfono</label>
+                  <button
+                    onClick={() => openEditModal(student)}
+                    className="w-full h-11 rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Edit size={16} />
+                    Editar alumno
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
 
-              <Input
-                value={editingStudent.phone}
-                onChange={(e) =>
-                  setEditingStudent((prev) => ({
-                    ...prev,
-                    phone: e.target.value,
-                  }))
-                }
-              />
-            </div>
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-[#090909] border border-yellow-500/20 rounded-3xl">
+            <div className="flex items-center justify-between px-5 sm:px-8 py-6 border-b border-zinc-900">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-black">
+                  {modalMode === "create" ? "Nuevo Alumno" : "Editar Alumno"}
+                </h2>
 
-            <div className="space-y-2">
-              <label className="text-sm text-zinc-400">Grupo</label>
+                <p className="text-zinc-500 mt-1">
+                  {modalMode === "create"
+                    ? "Crear acceso completo al portal."
+                    : "Actualizar información administrativa del alumno."}
+                </p>
+              </div>
 
-              <select
-                value={editingStudent.group_level}
-                onChange={(e) =>
-                  setEditingStudent((prev) => ({
-                    ...prev,
-                    group_level: e.target.value as GroupLevel,
-                  }))
-                }
-                className="w-full bg-zinc-900/50 border border-zinc-800/80 text-base md:text-sm rounded-lg px-4 h-12 text-zinc-200 outline-none focus:ring-2 focus:ring-gold-500/20 focus:border-gold-500/50 transition-all duration-300"
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="w-11 h-11 rounded-xl border border-zinc-800 flex items-center justify-center hover:border-red-500/40 transition-all shrink-0"
               >
-                <option value="principiante">Principiante</option>
-
-                <option value="avanzado">Avanzado</option>
-              </select>
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm text-zinc-400">Password temporal</label>
+            <div className="p-5 sm:p-8 space-y-5">
+              <div>
+                <label className="text-sm text-zinc-500 mb-2 block">
+                  Nombre completo
+                </label>
 
-              <Input
-                value={editingStudent.temporary_password}
-                onChange={(e) =>
-                  setEditingStudent((prev) => ({
-                    ...prev,
-                    temporary_password: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm text-zinc-400">Notas internas</label>
-
-              <textarea
-                rows={4}
-                value={editingStudent.notes}
-                onChange={(e) =>
-                  setEditingStudent((prev) => ({
-                    ...prev,
-                    notes: e.target.value,
-                  }))
-                }
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-200 outline-none focus:border-gold-500/50 focus:ring-2 focus:ring-gold-500/20 transition-all"
-                placeholder="Notas administrativas..."
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="flex items-center gap-3 cursor-pointer">
                 <input
-                  type="checkbox"
-                  checked={editingStudent.is_active}
+                  type="text"
+                  value={form.full_name}
                   onChange={(e) =>
-                    setEditingStudent((prev) => ({
-                      ...prev,
-                      is_active: e.target.checked,
-                    }))
+                    setForm({
+                      ...form,
+                      full_name: e.target.value,
+                    })
                   }
-                  className="w-4 h-4"
+                  className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
                 />
+              </div>
 
-                <span className="text-sm text-zinc-300">Alumno activo</span>
-              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Correo electrónico
+                  </label>
+
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        email: e.target.value,
+                      })
+                    }
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Teléfono
+                  </label>
+
+                  <input
+                    type="text"
+                    value={form.phone}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        phone: e.target.value,
+                      })
+                    }
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-500 mb-2 block">
+                  Grupo asignado
+                </label>
+
+                <select
+                  value={form.group_id}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      group_id: e.target.value,
+                    })
+                  }
+                  className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                >
+                  <option value="">Selecciona un grupo...</option>
+
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name} • {group.days || "Sin días"} •{" "}
+                      {group.schedule}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-500 mb-2 block">
+                  Password temporal
+                </label>
+
+                <input
+                  type="text"
+                  value={form.temporary_password}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      temporary_password: e.target.value,
+                    })
+                  }
+                  className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                />
+              </div>
+
+              {modalMode === "edit" && (
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.is_active}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        is_active: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4"
+                  />
+
+                  <span className="text-sm text-zinc-300">Alumno activo</span>
+                </label>
+              )}
+            </div>
+
+            <div className="px-5 sm:px-8 py-6 border-t border-zinc-900 flex flex-col sm:flex-row justify-end gap-4">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-6 py-3 border border-zinc-800 rounded-xl hover:border-red-500/40 transition-all"
+              >
+                Cancelar
+              </button>
+
+              {modalMode === "create" ? (
+                <button
+                  onClick={handleCreateStudent}
+                  disabled={creating}
+                  className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {creating ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Creando...
+                    </>
+                  ) : (
+                    <>
+                      <Users size={18} />
+                      Crear Alumno
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleUpdateStudent}
+                  disabled={saving}
+                  className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      Guardar cambios
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
-
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setIsModalOpen(false)}
-            >
-              Cancelar
-            </Button>
-
-            <Button
-              type="submit"
-              variant="gold"
-              disabled={saving}
-              className="gap-2"
-            >
-              <Save className="w-4 h-4" />
-
-              {saving ? "Guardando..." : "Guardar cambios"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        </div>
+      )}
     </div>
   );
 }

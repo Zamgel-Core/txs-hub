@@ -21,10 +21,12 @@ import { Avisos } from "@/src/pages/admin/Avisos";
 import { Eventos } from "@/src/pages/admin/Eventos";
 import { Reportes } from "@/src/pages/admin/Reportes";
 import { Configuracion } from "@/src/pages/admin/Configuracion";
+import { Mensajes } from "@/src/pages/admin/Mensajes";
 
 import { AlumnoDashboard } from "@/src/pages/alumno/AlumnoDashboard";
 import { AlumnoEventos } from "@/src/pages/alumno/AlumnoEventos";
 import { AlumnoPagos } from "@/src/pages/alumno/AlumnoPagos";
+import { AlumnoSoporte } from "@/src/pages/alumno/AlumnoSoporte";
 
 import { NotFound } from "@/src/pages/NotFound";
 
@@ -54,6 +56,7 @@ export default function App() {
           <Route path="grupos" element={<Grupos />} />
           <Route path="pagos" element={<Pagos />} />
           <Route path="asistencia" element={<Asistencia />} />
+          <Route path="mensajes" element={<Mensajes />} />
           <Route path="avisos" element={<Avisos />} />
           <Route path="eventos" element={<Eventos />} />
           <Route path="reportes" element={<Reportes />} />
@@ -71,6 +74,7 @@ export default function App() {
           <Route index element={<AlumnoDashboard />} />
           <Route path="eventos" element={<AlumnoEventos />} />
           <Route path="pagos" element={<AlumnoPagos />} />
+          <Route path="soporte" element={<AlumnoSoporte />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

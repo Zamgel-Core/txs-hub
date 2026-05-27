@@ -1,22 +1,22 @@
 // 📍 Ruta del archivo: src/pages/alumno/AlumnoDashboard.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Calendar,
-  CreditCard,
-  Bell,
-  CheckCircle2,
   AlertCircle,
+  Bell,
+  Calendar,
+  CheckCircle2,
+  CreditCard,
+  Lock,
   MapPin,
   User,
-  Lock,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Card, CardContent } from "@/src/components/ui/Card";
 import { Button } from "@/src/components/ui/Button";
 import { Badge } from "@/src/components/ui/Badge";
-import { mockAvisos, mockEventos } from "@/src/data";
+import { PaymentModal } from "@/src/components/alumno/PaymentModal";
 import { supabase } from "@/src/lib/supabase";
 
 type Student = {
@@ -24,17 +24,84 @@ type Student = {
   full_name: string;
   phone: string | null;
   email: string;
-  group_level: "principiante" | "avanzado";
+  group_level: string;
+  group_id: string | null;
   temporary_password: string | null;
   is_active: boolean;
+  membership_status: "activa" | "vencida" | "pendiente" | null;
+  membership_type: "semanal" | "quincenal" | "mensual" | null;
+  membership_start_date: string | null;
+  membership_end_date: string | null;
+  last_payment_date: string | null;
+  payment_notes: string | null;
 };
+
+type Group = {
+  id: string;
+  name: string;
+  instructor: string;
+  schedule: string;
+  level: string;
+  days: string | null;
+};
+
+type AttendanceRecord = {
+  id: string;
+  attendance_date: string;
+  status: "presente" | "falta" | "retardo";
+  created_at: string;
+};
+
+function formatDate(date: string | null) {
+  if (!date) return "Pendiente";
+
+  return new Date(date).toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getFirstName(name: string) {
+  return name.trim().split(" ")[0] || "Alumno";
+}
+
+function maskPassword(password: string | null) {
+  if (!password) return "No registrada";
+  if (password.length <= 4) return "••••";
+
+  return `${password.slice(0, 4)}••••`;
+}
+
+function getMembershipLabel(status: Student["membership_status"]) {
+  if (status === "activa") return "Membresía Activa";
+  if (status === "pendiente") return "Membresía Pendiente";
+  return "Membresía Vencida";
+}
+
+function getMembershipBadge(status: Student["membership_status"]) {
+  if (status === "activa") {
+    return <Badge variant="success">Al corriente</Badge>;
+  }
+
+  if (status === "pendiente") {
+    return <Badge variant="warning">Pendiente</Badge>;
+  }
+
+  return <Badge variant="neutral">Vencida</Badge>;
+}
 
 export function AlumnoDashboard() {
   const [alumno, setAlumno] = useState<Student | null>(null);
+  const [group, setGroup] = useState<Group | null>(null);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [newPassword, setNewPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [message, setMessage] = useState("");
+
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
 
   useEffect(() => {
     loadAlumno();
@@ -49,21 +116,56 @@ export function AlumnoDashboard() {
 
     if (!user?.email) {
       setAlumno(null);
+      setGroup(null);
       setLoading(false);
       return;
     }
 
-    const { data, error } = await supabase
+    const { data: studentData, error: studentError } = await supabase
       .from("students")
       .select("*")
       .ilike("email", user.email)
       .maybeSingle();
 
-    if (error) {
-      console.error(error);
+    if (studentError || !studentData) {
+      console.error(studentError);
       setAlumno(null);
+      setGroup(null);
+      setLoading(false);
+      return;
+    }
+
+    setAlumno(studentData as Student);
+
+    if (studentData.group_id) {
+      const { data: groupData, error: groupError } = await supabase
+        .from("groups")
+        .select("*")
+        .eq("id", studentData.group_id)
+        .maybeSingle();
+
+      if (groupError) {
+        console.error(groupError);
+        setGroup(null);
+      } else {
+        setGroup(groupData as Group);
+      }
     } else {
-      setAlumno(data);
+      setGroup(null);
+    }
+
+    const { data: attendanceData, error: attendanceError } = await supabase
+      .from("attendance")
+      .select("*")
+      .eq("student_id", studentData.id)
+      .order("attendance_date", { ascending: false })
+      .limit(5);
+
+    if (attendanceError) {
+      console.error(attendanceError);
+      setAttendance([]);
+    } else {
+      setAttendance((attendanceData as AttendanceRecord[]) || []);
     }
 
     setLoading(false);
@@ -94,6 +196,26 @@ export function AlumnoDashboard() {
     setMessage("Contraseña actualizada correctamente.");
   }
 
+  const classCount = useMemo(() => {
+    if (!group?.days) return 0;
+
+    return group.days
+      .split(",")
+      .map((day) => day.trim())
+      .filter(Boolean).length;
+  }, [group]);
+
+  const attendanceStats = useMemo(() => {
+    const total = attendance.length;
+    const present = attendance.filter(
+      (item) => item.status === "presente",
+    ).length;
+
+    if (!total) return null;
+
+    return Math.round((present / total) * 100);
+  }, [attendance]);
+
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-gold-400">
@@ -118,23 +240,36 @@ export function AlumnoDashboard() {
         <div className="relative z-10 w-full flex flex-col md:flex-row justify-between md:items-center gap-6">
           <div>
             <h1 className="text-3xl sm:text-5xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-gold-500 to-gold-600 mb-3 drop-shadow-md">
-              ¡Hola, {alumno.full_name.split(" ")[0]}!
+              ¡Hola, {getFirstName(alumno.full_name)}!
             </h1>
 
             <p className="text-zinc-400 text-lg font-light">
-              Es un buen día para bailar. Tienes{" "}
-              <strong className="text-white font-medium">2 clases</strong>{" "}
-              programadas para esta semana.
+              {group ? (
+                <>
+                  Tu grupo actual es{" "}
+                  <strong className="text-white font-medium">
+                    {group.name}
+                  </strong>
+                  . Tienes{" "}
+                  <strong className="text-white font-medium">
+                    {classCount || "—"} clase(s)
+                  </strong>{" "}
+                  programadas según tu horario.
+                </>
+              ) : (
+                "Aún no tienes grupo asignado."
+              )}
             </p>
           </div>
 
           <div className="relative z-10 w-full md:w-auto">
             <Button
               variant="gold"
-              size="lg"
-              className="w-full md:w-auto gap-2 shadow-[0_0_20px_rgba(212,175,55,0.3)] hover:shadow-[0_0_40px_rgba(212,175,55,0.5)] text-md h-12 px-8 transition-all duration-300"
+              className="gap-2 shadow-lg shadow-gold-500/20"
+              onClick={() => setPaymentModalOpen(true)}
             >
-              <CreditCard className="w-5 h-5" /> Pagar Membresía
+              <CreditCard className="w-5 h-5" />
+              Pagar Membresía
             </Button>
           </div>
         </div>
@@ -175,9 +310,14 @@ export function AlumnoDashboard() {
 
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
               <p className="text-zinc-500 text-sm mb-1">Grupo</p>
-              <p className="text-gold-400 font-semibold capitalize">
-                {alumno.group_level}
+              <p className="text-gold-400 font-semibold">
+                {group?.name || alumno.group_level || "Sin grupo"}
               </p>
+              {group && (
+                <p className="text-xs text-zinc-500 mt-1">
+                  {group.days} • {group.schedule}
+                </p>
+              )}
             </div>
           </div>
 
@@ -194,7 +334,7 @@ export function AlumnoDashboard() {
                 Contraseña temporal asignada
               </p>
               <p className="text-gold-400 font-semibold tracking-wider">
-                {alumno.temporary_password || "No registrada"}
+                {maskPassword(alumno.temporary_password)}
               </p>
             </div>
 
@@ -205,8 +345,6 @@ export function AlumnoDashboard() {
               placeholder="Nueva contraseña"
               className="w-full h-12 rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none focus:border-gold-500"
             />
-
-            {message && <p className="text-sm text-gold-400">{message}</p>}
 
             <Button
               variant="gold"
@@ -227,11 +365,11 @@ export function AlumnoDashboard() {
               <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />
               </div>
-              <Badge variant="success">Al corriente</Badge>
+              {getMembershipBadge(alumno.membership_status)}
             </div>
             <p className="text-sm text-zinc-500">Estado Actual</p>
             <p className="text-xl font-bold text-white font-display mt-1">
-              Membresía Activa
+              {getMembershipLabel(alumno.membership_status)}
             </p>
           </CardContent>
         </Card>
@@ -245,7 +383,7 @@ export function AlumnoDashboard() {
             </div>
             <p className="text-sm text-zinc-500">Fecha de Vencimiento</p>
             <p className="text-xl font-bold text-white font-display mt-1">
-              Pendiente
+              {formatDate(alumno.membership_end_date)}
             </p>
           </CardContent>
         </Card>
@@ -257,9 +395,9 @@ export function AlumnoDashboard() {
                 <CreditCard className="w-5 h-5 text-zinc-300" />
               </div>
             </div>
-            <p className="text-sm text-zinc-500">Próximo Pago</p>
-            <p className="text-xl font-bold text-white font-display mt-1">
-              Pendiente
+            <p className="text-sm text-zinc-500">Tipo de Membresía</p>
+            <p className="text-xl font-bold text-white font-display mt-1 capitalize">
+              {alumno.membership_type || "Pendiente"}
             </p>
           </CardContent>
         </Card>
@@ -271,10 +409,14 @@ export function AlumnoDashboard() {
                 <AlertCircle className="w-5 h-5 text-blue-500" />
               </div>
             </div>
-            <p className="text-sm text-zinc-500">Asistencia Mensual</p>
+            <p className="text-sm text-zinc-500">Asistencia Reciente</p>
             <div className="flex items-baseline gap-2 mt-1">
-              <p className="text-xl font-bold text-white font-display">—</p>
-              <span className="text-xs text-zinc-500">Sin datos aún</span>
+              <p className="text-xl font-bold text-white font-display">
+                {attendanceStats !== null ? `${attendanceStats}%` : "—"}
+              </p>
+              <span className="text-xs text-zinc-500">
+                {attendanceStats !== null ? "Últimos registros" : "Sin datos"}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -286,6 +428,7 @@ export function AlumnoDashboard() {
             <h2 className="text-xl font-display font-bold text-white">
               Avisos Recientes
             </h2>
+
             <Button
               variant="link"
               className="text-gold-500 hover:text-gold-400 text-sm h-auto p-0"
@@ -294,32 +437,17 @@ export function AlumnoDashboard() {
             </Button>
           </div>
 
-          <div className="space-y-4">
-            {mockAvisos.map((aviso) => (
-              <Card
-                key={aviso.id}
-                className="border-l-4 border-l-gold-500 bg-txs-card border-y-zinc-800 border-r-zinc-800 hover:bg-zinc-900/50 transition-colors"
-              >
-                <CardContent className="p-5 flex gap-4">
-                  <div className="w-10 h-10 rounded-full bg-gold-500/10 flex-shrink-0 flex items-center justify-center mt-1">
-                    <Bell className="w-5 h-5 text-gold-500" />
-                  </div>
-
-                  <div>
-                    <h3 className="font-bold text-white mb-1">
-                      {aviso.titulo}
-                    </h3>
-                    <p className="text-sm text-zinc-400 mb-2">
-                      {aviso.contenido}
-                    </p>
-                    <p className="text-xs font-mono text-zinc-500">
-                      {aviso.fecha}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <Card className="bg-txs-card border-zinc-800/80">
+            <CardContent className="p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-gold-500/10 flex items-center justify-center mx-auto mb-4">
+                <Bell className="w-5 h-5 text-gold-500" />
+              </div>
+              <p className="text-white font-semibold">Sin avisos recientes</p>
+              <p className="text-sm text-zinc-500 mt-2">
+                Los comunicados publicados por administración aparecerán aquí.
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
         <div>
@@ -332,31 +460,32 @@ export function AlumnoDashboard() {
           <Card className="bg-txs-card border-zinc-800 overflow-hidden">
             <CardContent className="p-0">
               <div className="divide-y divide-zinc-800/80">
-                {[
-                  {
-                    fecha: "Pendiente",
-                    clase: "Historial de asistencia",
-                    estado: "Sin datos",
-                  },
-                ].map((item, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between p-4 hover:bg-zinc-900/30 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-zinc-500" />
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          {item.clase}
-                        </p>
-                        <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                          {item.fecha}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="neutral">{item.estado}</Badge>
+                {attendance.length === 0 ? (
+                  <div className="p-6 text-center text-zinc-500">
+                    Sin registros de asistencia todavía.
                   </div>
-                ))}
+                ) : (
+                  attendance.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between p-4 hover:bg-zinc-900/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-gold-500" />
+                        <div>
+                          <p className="text-sm font-medium text-white capitalize">
+                            {item.status}
+                          </p>
+                          <p className="text-xs text-zinc-500 font-mono mt-0.5">
+                            {formatDate(item.attendance_date)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <Badge variant="neutral">{item.status}</Badge>
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
@@ -366,7 +495,7 @@ export function AlumnoDashboard() {
       <div>
         <div className="flex items-center justify-between mb-4 mt-4">
           <h2 className="text-xl font-display font-bold text-white">
-            Próximos Eventos
+            Próximas Clases
           </h2>
 
           <Link to="/alumno/eventos">
@@ -379,61 +508,37 @@ export function AlumnoDashboard() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
-          {mockEventos.map((evento, i) => (
-            <Card
-              key={evento.id}
-              className="overflow-hidden bg-txs-card border-zinc-800 hover:border-gold-500/40 transition-all group"
-            >
-              <div className="h-40 w-full relative bg-zinc-900">
-                <div className="absolute inset-0 bg-gradient-to-t from-txs-card to-transparent z-10" />
-                <img
-                  src={`https://images.unsplash.com/photo-1547153760-18fc86324498?q=80&w=600&auto=format&fit=crop&sig=${i}`}
-                  alt={evento.titulo}
-                  className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity group-hover:scale-105 duration-500"
-                />
-
-                <div className="absolute top-4 left-4 z-20 bg-txs-black/80 backdrop-blur-md border border-zinc-700/50 rounded-lg px-3 py-2 text-center pointer-events-none">
-                  <p className="text-xs font-bold text-gold-500 uppercase leading-none mb-1">
-                    {new Date(evento.fecha).toLocaleString("es-ES", {
-                      month: "short",
-                    })}
+        <Card className="bg-txs-card border-zinc-800/80">
+          <CardContent className="p-6">
+            {group ? (
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-lg text-white">{group.name}</h3>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    Instructor: {group.instructor}
                   </p>
-
-                  <p className="text-2xl font-display font-bold text-white leading-none">
-                    {new Date(evento.fecha).getDate() + 1}
+                  <p className="text-sm text-zinc-400 mt-1">
+                    {group.days} • {group.schedule}
                   </p>
+                </div>
+
+                <div className="w-12 h-12 rounded-xl bg-gold-500/10 flex items-center justify-center">
+                  <MapPin className="w-5 h-5 text-gold-500" />
                 </div>
               </div>
-
-              <CardContent className="p-5 relative z-20">
-                <h3 className="font-bold text-lg text-white mb-2 group-hover:text-gold-500 transition-colors line-clamp-1">
-                  {evento.titulo}
-                </h3>
-
-                <div className="space-y-2 mb-5">
-                  <p className="text-sm text-zinc-400 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-                    20:00 hrs
-                  </p>
-
-                  <p className="text-sm text-zinc-400 flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-                    <span className="line-clamp-1">{evento.lugar}</span>
-                  </p>
-                </div>
-
-                <Button
-                  variant="outline"
-                  className="w-full border-zinc-700 hover:bg-gold-500 hover:text-txs-black hover:border-gold-500 transition-colors font-medium"
-                >
-                  Ver Detalles
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+            ) : (
+              <p className="text-zinc-500 text-center">
+                No tienes clases asignadas todavía.
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </div>
+      <PaymentModal
+        isOpen={paymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        studentName={alumno?.full_name}
+      />
     </div>
   );
 }
