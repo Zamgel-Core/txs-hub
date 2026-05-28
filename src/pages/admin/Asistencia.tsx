@@ -1,123 +1,205 @@
-import { useEffect, useState } from "react";
-import { AlertCircle, Check, Loader2, Save, X } from "lucide-react";
+// 📍 Ruta del archivo: src/pages/admin/Asistencia.tsx
 
-import { Button } from "../../components/ui/Button";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  Clock3,
+  Loader2,
+  RefreshCcw,
+  Save,
+  Users,
+  X,
+} from "lucide-react";
 
-import { Card, CardContent } from "../../components/ui/Card";
+import { Button } from "@/src/components/ui/Button";
+import { Card, CardContent } from "@/src/components/ui/Card";
+import {
+  AttendanceGroup,
+  AttendanceStatus,
+  AttendanceStudent,
+  getAttendanceByGroupAndDate,
+  getAttendanceGroups,
+  getStudentsByGroup,
+  saveGroupAttendance,
+} from "@/src/services/attendanceService";
 
-import { supabase } from "../../lib/supabase";
+const today = new Date().toISOString().slice(0, 10);
 
-type Group = {
-  id: string;
-  name: string;
-  instructor: string;
-  schedule: string;
-  level: string;
-};
+function statusClasses(
+  current: AttendanceStatus | undefined,
+  target: AttendanceStatus,
+) {
+  if (current !== target) {
+    return "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500 hover:bg-zinc-800";
+  }
 
-type Student = {
-  id: string;
-  full_name: string;
-  membership_type: string | null;
-  group_id: string | null;
-};
+  if (target === "presente") {
+    return "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700";
+  }
 
-type AttendanceStatus = "presente" | "falta" | "retardo";
+  if (target === "falta") {
+    return "border-red-600 bg-red-600 text-white hover:bg-red-700";
+  }
+
+  return "border-amber-600 bg-amber-600 text-white hover:bg-amber-700";
+}
+
+function getGroupLabel(group: AttendanceGroup) {
+  return `${group.name} • ${group.schedule || "Sin horario"} (${group.level || "Sin nivel"})`;
+}
+
+function AttendanceButtons({
+  currentStatus,
+  onChange,
+  showLabels = false,
+}: {
+  currentStatus: AttendanceStatus | undefined;
+  onChange: (status: AttendanceStatus) => void;
+  showLabels?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2 sm:flex sm:justify-end">
+      <Button
+        size="sm"
+        onClick={() => onChange("presente")}
+        className={`h-10 gap-2 rounded-xl border px-3 ${statusClasses(
+          currentStatus,
+          "presente",
+        )}`}
+        variant="outline"
+      >
+        <Check className="h-4 w-4" />
+        {showLabels && <span className="hidden sm:inline">Presente</span>}
+      </Button>
+
+      <Button
+        size="sm"
+        onClick={() => onChange("falta")}
+        className={`h-10 gap-2 rounded-xl border px-3 ${statusClasses(
+          currentStatus,
+          "falta",
+        )}`}
+        variant="outline"
+      >
+        <X className="h-4 w-4" />
+        {showLabels && <span className="hidden sm:inline">Falta</span>}
+      </Button>
+
+      <Button
+        size="sm"
+        onClick={() => onChange("retardo")}
+        className={`h-10 gap-2 rounded-xl border px-3 ${statusClasses(
+          currentStatus,
+          "retardo",
+        )}`}
+        variant="outline"
+      >
+        <Clock3 className="h-4 w-4" />
+        {showLabels && <span className="hidden sm:inline">Retardo</span>}
+      </Button>
+    </div>
+  );
+}
 
 export function Asistencia() {
-  const [groups, setGroups] = useState<Group[]>([]);
-
-  const [students, setStudents] = useState<Student[]>([]);
-
+  const [groups, setGroups] = useState<AttendanceGroup[]>([]);
+  const [students, setStudents] = useState<AttendanceStudent[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
-
-  const [loading, setLoading] = useState(false);
-
-  const [saving, setSaving] = useState(false);
-
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [selectedDate, setSelectedDate] = useState(today);
 
   const [attendance, setAttendance] = useState<
     Record<string, AttendanceStatus>
   >({});
 
-  useEffect(() => {
-    loadGroups();
-  }, []);
+  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (selectedGroup) {
-      loadStudents(selectedGroup);
-    }
-  }, [selectedDate]);
+  const selectedGroupData = useMemo(() => {
+    return groups.find((group) => group.id === selectedGroup) || null;
+  }, [groups, selectedGroup]);
 
-  async function loadGroups() {
-    const { data, error } = await supabase
-      .from("groups")
-      .select("*")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true });
+  const stats = useMemo(() => {
+    const values = students.map((student) => attendance[student.id] || null);
 
-    if (error) {
+    return {
+      total: students.length,
+      presentes: values.filter((status) => status === "presente").length,
+      faltas: values.filter((status) => status === "falta").length,
+      retardos: values.filter((status) => status === "retardo").length,
+      sinMarcar: values.filter((status) => status === null).length,
+    };
+  }, [attendance, students]);
+
+  const loadGroups = useCallback(async () => {
+    try {
+      setLoadingGroups(true);
+
+      const data = await getAttendanceGroups();
+
+      setGroups(data);
+
+      if (data.length > 0 && !selectedGroup) {
+        setSelectedGroup(data[0].id);
+      }
+    } catch (error) {
       console.error("Error cargando grupos:", error);
+      alert("No se pudieron cargar los grupos.");
+    } finally {
+      setLoadingGroups(false);
+    }
+  }, [selectedGroup]);
+
+  const loadAttendanceData = useCallback(async () => {
+    if (!selectedGroup) {
+      setStudents([]);
+      setAttendance({});
       return;
     }
 
-    setGroups(data || []);
-  }
+    try {
+      setLoadingStudents(true);
 
-  async function loadStudents(groupId: string) {
-    setLoading(true);
+      const [studentsData, attendanceData] = await Promise.all([
+        getStudentsByGroup(selectedGroup),
+        getAttendanceByGroupAndDate(selectedGroup, selectedDate),
+      ]);
 
-    const { data, error } = await supabase
-      .from("students")
-      .select("*")
-      .eq("group_id", groupId)
-      .eq("is_active", true)
-      .order("full_name");
-
-    if (error) {
-      console.error("Error cargando alumnos:", error);
-
-      setLoading(false);
-      return;
-    }
-
-    const studentsData = data || [];
-
-    setStudents(studentsData);
-
-    // ✅ CARGAR ASISTENCIA EXISTENTE
-    const { data: attendanceData } = await supabase
-      .from("attendance")
-      .select("*")
-      .eq("attendance_date", selectedDate);
-
-    if (attendanceData) {
       const existingAttendance: Record<string, AttendanceStatus> = {};
 
       attendanceData.forEach((item) => {
         existingAttendance[item.student_id] = item.status;
       });
 
+      setStudents(studentsData);
       setAttendance(existingAttendance);
+    } catch (error) {
+      console.error("Error cargando asistencia:", error);
+      alert("No se pudo cargar la asistencia.");
+    } finally {
+      setLoadingStudents(false);
     }
+  }, [selectedDate, selectedGroup]);
 
-    setLoading(false);
-  }
+  useEffect(() => {
+    loadGroups();
+  }, [loadGroups]);
 
-  function handleSelectGroup(groupId: string) {
-    setSelectedGroup(groupId);
-    setAttendance({});
+  useEffect(() => {
+    loadAttendanceData();
+  }, [loadAttendanceData]);
 
-    if (groupId) {
-      loadStudents(groupId);
-    } else {
-      setStudents([]);
-    }
-  }
+  useEffect(() => {
+    if (!selectedGroup) return;
+
+    const subscription = window.setTimeout(() => {
+      loadAttendanceData();
+    }, 300);
+
+    return () => {
+      window.clearTimeout(subscription);
+    };
+  }, [loadAttendanceData, selectedGroup]);
 
   function handleMarkAttendance(studentId: string, status: AttendanceStatus) {
     setAttendance((prev) => ({
@@ -127,214 +209,226 @@ export function Asistencia() {
   }
 
   async function handleSaveAttendance() {
-    if (!selectedGroup) return;
+    if (!selectedGroup) {
+      alert("Selecciona un grupo.");
+      return;
+    }
 
-    setSaving(true);
+    if (students.length === 0) {
+      alert("No hay alumnos para guardar asistencia.");
+      return;
+    }
 
-    try {
-      const attendanceRows = students.map((student) => ({
+    const markedAttendance = students
+      .filter((student) => Boolean(attendance[student.id]))
+      .map((student) => ({
         student_id: student.id,
+        group_id: selectedGroup,
         attendance_date: selectedDate,
-        status: attendance[student.id] || "presente",
+        status: attendance[student.id],
       }));
 
-      const { error } = await supabase
-        .from("attendance")
-        .insert(attendanceRows);
+    if (markedAttendance.length === 0) {
+      alert("Marca al menos una asistencia antes de guardar.");
+      return;
+    }
 
-      if (error) {
-        console.error("Error guardando asistencia:", error);
+    try {
+      setSaving(true);
 
-        alert("Ocurrió un error al guardar la asistencia.");
+      await saveGroupAttendance(markedAttendance);
 
-        setSaving(false);
-        return;
-      }
+      await loadAttendanceData();
 
       alert("Asistencia guardada correctamente.");
     } catch (error) {
-      console.error(error);
-
-      alert("Ocurrió un error inesperado.");
+      console.error("Error guardando asistencia:", error);
+      alert("No se pudo guardar la asistencia.");
+    } finally {
+      setSaving(false);
     }
+  }
 
-    setSaving(false);
+  if (loadingGroups) {
+    return (
+      <div className="flex min-h-[55vh] items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="mx-auto mb-5 h-12 w-12 animate-spin text-yellow-400" />
+
+          <p className="text-sm uppercase tracking-widest text-zinc-500">
+            Cargando grupos...
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-bold text-white">Asistencia</h1>
+    <div className="space-y-7 pb-10">
+      <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <div>
+          <h1 className="text-4xl font-bold tracking-tight text-white">
+            Asistencia
+          </h1>
 
-        <p className="text-zinc-500 mt-2">
-          Control de asistencia en tiempo real.
-        </p>
+          <p className="mt-2 text-zinc-500">
+            Control real de asistencia por grupo y fecha.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-3">
+            <p className="text-xs text-zinc-500">Total</p>
+            <p className="text-2xl font-bold text-white">{stats.total}</p>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+            <p className="text-xs text-zinc-500">Presentes</p>
+            <p className="text-2xl font-bold text-emerald-400">
+              {stats.presentes}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+            <p className="text-xs text-zinc-500">Faltas</p>
+            <p className="text-2xl font-bold text-red-400">{stats.faltas}</p>
+          </div>
+
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+            <p className="text-xs text-zinc-500">Retardos</p>
+            <p className="text-2xl font-bold text-amber-400">
+              {stats.retardos}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-700 bg-zinc-900/70 px-4 py-3">
+            <p className="text-xs text-zinc-500">Sin marcar</p>
+            <p className="text-2xl font-bold text-zinc-300">
+              {stats.sinMarcar}
+            </p>
+          </div>
+        </div>
       </div>
 
       <Card className="overflow-hidden">
-        <div className="p-5 border-b border-zinc-800 bg-zinc-900/30">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="border-b border-zinc-800 bg-zinc-900/30 p-4 sm:p-5">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <label className="block text-sm text-zinc-400 mb-2">
-                Grupo de Clase
+              <label className="mb-2 block text-sm text-zinc-400">
+                Grupo de clase
               </label>
 
               <select
                 value={selectedGroup}
-                onChange={(e) => handleSelectGroup(e.target.value)}
-                className="w-full h-12 rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/40"
+                onChange={(event) => setSelectedGroup(event.target.value)}
+                className="h-12 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/40"
               >
                 <option value="">Selecciona un grupo...</option>
 
                 {groups.map((group) => (
                   <option key={group.id} value={group.id}>
-                    {group.name} • {group.schedule} ({group.level})
+                    {getGroupLabel(group)}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm text-zinc-400 mb-2">Fecha</label>
-
+              <label className="mb-2 block text-sm text-zinc-400">Fecha</label>
               <input
                 type="date"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full h-12 rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/40"
+                onChange={(event) => setSelectedDate(event.target.value)}
+                className="h-12 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none transition [color-scheme:dark] focus:border-yellow-500"
               />
             </div>
           </div>
+
+          {selectedGroupData && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+              <span className="rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-yellow-400">
+                {selectedGroupData.instructor || "Sin instructor"}
+              </span>
+
+              <span>{selectedGroupData.schedule || "Sin horario"}</span>
+              <span className="hidden sm:inline">•</span>
+              <span>{selectedGroupData.level || "Sin nivel"}</span>
+            </div>
+          )}
         </div>
 
         <CardContent className="p-0">
           {!selectedGroup ? (
-            <div className="py-24 px-6 text-center">
-              <div className="w-20 h-20 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center mx-auto mb-6">
-                <img
-                  src="/branding/sombrero_TSX.png"
-                  alt=""
-                  className="w-10 opacity-40"
-                />
+            <div className="px-6 py-24 text-center">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900">
+                <Users className="h-9 w-9 text-zinc-600" />
               </div>
 
               <h2 className="text-2xl font-semibold text-white">
                 Selecciona un grupo
               </h2>
 
-              <p className="text-zinc-500 mt-3 max-w-md mx-auto">
+              <p className="mx-auto mt-3 max-w-md text-zinc-500">
                 Elige un grupo para comenzar a pasar asistencia.
               </p>
             </div>
-          ) : loading ? (
-            <div className="py-24 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-yellow-400 animate-spin" />
+          ) : loadingStudents ? (
+            <div className="flex justify-center py-24">
+              <Loader2 className="h-8 w-8 animate-spin text-yellow-400" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-zinc-900/40 border-b border-zinc-800">
+            <div>
+              <table className="hidden w-full text-left lg:table">
+                <thead className="border-b border-zinc-800 bg-zinc-900/40">
                   <tr>
-                    <th className="px-6 py-4 text-zinc-400 text-sm">Alumno</th>
+                    <th className="px-6 py-4 text-sm text-zinc-400">Alumno</th>
 
-                    <th className="px-6 py-4 text-right text-zinc-400 text-sm">
+                    <th className="px-6 py-4 text-right text-sm text-zinc-400">
                       Asistencia
                     </th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-zinc-800">
-                  {students.map((student) => (
-                    <tr
-                      key={student.id}
-                      className="hover:bg-zinc-900/20 transition-colors"
-                    >
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-4">
-                          <div className="w-11 h-11 rounded-full bg-zinc-800 flex items-center justify-center text-white font-bold">
-                            {student.full_name.charAt(0)}
+                  {students.map((student) => {
+                    const currentStatus = attendance[student.id];
+
+                    return (
+                      <tr
+                        key={student.id}
+                        className="transition-colors hover:bg-zinc-900/20"
+                      >
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-4">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-800 font-bold text-white">
+                              {student.full_name.charAt(0)}
+                            </div>
+
+                            <div>
+                              <p className="font-medium text-white">
+                                {student.full_name}
+                              </p>
+
+                              <p className="text-sm capitalize text-zinc-500">
+                                {student.membership_type || "Sin membresía"} •{" "}
+                                {student.membership_status || "Sin estado"}
+                              </p>
+                            </div>
                           </div>
+                        </td>
 
-                          <div>
-                            <p className="text-white font-medium">
-                              {student.full_name}
-                            </p>
-
-                            <p className="text-zinc-500 text-sm capitalize">
-                              {student.membership_type || "Sin membresía"}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-5">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              handleMarkAttendance(student.id, "presente")
+                        <td className="px-6 py-5">
+                          <AttendanceButtons
+                            currentStatus={currentStatus}
+                            onChange={(status) =>
+                              handleMarkAttendance(student.id, status)
                             }
-                            className={`${
-                              attendance[student.id] === "presente"
-                                ? "bg-emerald-600 hover:bg-emerald-700 border-emerald-600"
-                                : ""
-                            }`}
-                            variant={
-                              attendance[student.id] === "presente"
-                                ? "default"
-                                : "outline"
-                            }
-                          >
-                            <Check className="w-4 h-4 sm:mr-2" />
-
-                            <span className="hidden sm:inline">Presente</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              handleMarkAttendance(student.id, "falta")
-                            }
-                            className={`${
-                              attendance[student.id] === "falta"
-                                ? "bg-red-600 hover:bg-red-700 border-red-600"
-                                : ""
-                            }`}
-                            variant={
-                              attendance[student.id] === "falta"
-                                ? "default"
-                                : "outline"
-                            }
-                          >
-                            <X className="w-4 h-4 sm:mr-2" />
-
-                            <span className="hidden sm:inline">Falta</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              handleMarkAttendance(student.id, "retardo")
-                            }
-                            className={`${
-                              attendance[student.id] === "retardo"
-                                ? "bg-amber-600 hover:bg-amber-700 border-amber-600"
-                                : ""
-                            }`}
-                            variant={
-                              attendance[student.id] === "retardo"
-                                ? "default"
-                                : "outline"
-                            }
-                          >
-                            <AlertCircle className="w-4 h-4 sm:mr-2" />
-
-                            <span className="hidden sm:inline">Retardo</span>
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            showLabels
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
 
                   {students.length === 0 && (
                     <tr>
@@ -349,20 +443,70 @@ export function Asistencia() {
                 </tbody>
               </table>
 
+              <div className="divide-y divide-zinc-800 lg:hidden">
+                {students.map((student) => {
+                  const currentStatus = attendance[student.id];
+
+                  return (
+                    <div key={student.id} className="p-4">
+                      <div className="mb-4 flex items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 font-bold text-white">
+                          {student.full_name.charAt(0)}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold leading-tight text-white">
+                            {student.full_name}
+                          </p>
+
+                          <p className="mt-1 text-sm capitalize text-zinc-500">
+                            {student.membership_type || "Sin membresía"} •{" "}
+                            {student.membership_status || "Sin estado"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <AttendanceButtons
+                        currentStatus={currentStatus}
+                        onChange={(status) =>
+                          handleMarkAttendance(student.id, status)
+                        }
+                      />
+                    </div>
+                  );
+                })}
+
+                {students.length === 0 && (
+                  <div className="px-6 py-16 text-center text-zinc-500">
+                    No hay alumnos registrados en este grupo.
+                  </div>
+                )}
+              </div>
+
               {students.length > 0 && (
-                <div className="p-5 border-t border-zinc-800 bg-zinc-900/20 flex justify-end">
+                <div className="flex flex-col gap-3 border-t border-zinc-800 bg-zinc-900/20 p-5 sm:flex-row sm:justify-end">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={loadAttendanceData}
+                    disabled={loadingStudents || saving}
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    Actualizar
+                  </Button>
+
                   <Button
                     variant="gold"
-                    className="h-11 px-6"
+                    className="h-11 gap-2 px-6"
                     onClick={handleSaveAttendance}
                     disabled={saving}
                   >
                     {saving ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Save className="w-4 h-4 mr-2" />
+                      <Save className="h-4 w-4" />
                     )}
-                    Guardar asistencia
+                    {saving ? "Guardando..." : "Guardar asistencia"}
                   </Button>
                 </div>
               )}
