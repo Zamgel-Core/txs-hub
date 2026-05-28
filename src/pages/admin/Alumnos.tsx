@@ -271,7 +271,7 @@ export function Alumnos() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white px-4 sm:px-6 lg:px-10 py-6 lg:py-8">
+    <div className="min-h-screen bg-black text-white px-3 sm:px-5 lg:px-6 2xl:px-10 py-6 lg:py-8">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5 mb-8">
         <div>
           <h1 className="text-4xl sm:text-5xl font-black tracking-tight">
@@ -302,7 +302,7 @@ export function Alumnos() {
         </div>
       </div>
 
-      <div className="bg-[#090909] border border-yellow-500/20 rounded-3xl overflow-hidden">
+      <div className="w-full max-w-[1500px] mx-auto bg-[#090909] border border-yellow-500/20 rounded-3xl overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-zinc-900 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
           <div className="relative">
             <Search
@@ -334,18 +334,28 @@ export function Alumnos() {
           </select>
         </div>
 
-        <div className="hidden lg:block overflow-auto">
-          <table className="w-full min-w-[1050px]">
+        <div className="hidden lg:block overflow-hidden">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[12%]" />
+              <col className="w-[22%]" />
+              <col className="w-[12%]" />
+              <col className="w-[10%]" />
+              <col className="w-[11%]" />
+              <col className="w-[8%]" />
+              <col className="w-[7%]" />
+            </colgroup>
             <thead className="bg-[#0d0d0d]">
               <tr className="text-left text-zinc-500 text-sm">
-                <th className="px-6 py-4">Nombre</th>
-                <th className="px-6 py-4">Teléfono</th>
-                <th className="px-6 py-4">Correo</th>
-                <th className="px-6 py-4">Grupo real</th>
-                <th className="px-6 py-4">Horario</th>
-                <th className="px-6 py-4">Password temporal</th>
-                <th className="px-6 py-4">Estado</th>
-                <th className="px-6 py-4 text-right">Acciones</th>
+                <th className="px-3 py-4">Nombre</th>
+                <th className="px-3 py-4">Teléfono</th>
+                <th className="px-3 py-4">Correo</th>
+                <th className="px-3 py-4">Grupo</th>
+                <th className="px-3 py-4">Horario</th>
+                <th className="px-3 py-4">Password</th>
+                <th className="px-3 py-4">Estado</th>
+                <th className="px-3 py-4 text-center">Editar</th>
               </tr>
             </thead>
 
@@ -365,14 +375,14 @@ export function Alumnos() {
                       key={student.id}
                       className="border-t border-zinc-900 hover:bg-[#0d0d0d] transition-all"
                     >
-                      <td className="px-6 py-5">
+                      <td className="px-3 py-5">
                         <div className="flex items-center gap-4">
                           <div className="w-11 h-11 rounded-full bg-zinc-800 flex items-center justify-center font-bold shrink-0">
                             {student.full_name.charAt(0)}
                           </div>
 
                           <div className="min-w-0">
-                            <p className="font-semibold leading-tight">
+                            <p className="font-semibold leading-tight break-words">
                               {student.full_name}
                             </p>
 
@@ -383,21 +393,21 @@ export function Alumnos() {
                         </div>
                       </td>
 
-                      <td className="px-6 py-5 text-zinc-300">
+                      <td className="px-3 py-5 text-zinc-300 truncate">
                         {student.phone}
                       </td>
 
-                      <td className="px-6 py-5 text-zinc-300">
+                      <td className="px-3 py-5 text-zinc-300 truncate">
                         {student.email}
                       </td>
 
-                      <td className="px-6 py-5">
-                        <span className="bg-zinc-800 text-zinc-200 px-3 py-1 rounded-full text-sm">
+                      <td className="px-3 py-5">
+                        <span className="inline-block max-w-full truncate bg-zinc-800 text-zinc-200 px-2 py-1 rounded-full text-xs">
                           {groupInfo.name}
                         </span>
                       </td>
 
-                      <td className="px-6 py-5 text-zinc-500">
+                      <td className="px-3 py-5 text-zinc-500">
                         <p>{groupInfo.schedule}</p>
                         {groupInfo.days && (
                           <p className="text-xs text-zinc-600 mt-1">
@@ -406,13 +416,13 @@ export function Alumnos() {
                         )}
                       </td>
 
-                      <td className="px-6 py-5 text-yellow-400 font-semibold">
+                      <td className="px-3 py-5 text-yellow-400 font-semibold truncate">
                         {student.temporary_password || "—"}
                       </td>
 
-                      <td className="px-6 py-5">
+                      <td className="px-3 py-5">
                         <span
-                          className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
                             student.is_active
                               ? "bg-emerald-500/20 text-emerald-400"
                               : "bg-red-500/20 text-red-400"
@@ -422,13 +432,14 @@ export function Alumnos() {
                         </span>
                       </td>
 
-                      <td className="px-6 py-5 text-right">
+                      <td className="px-3 py-5 text-center">
                         <button
                           onClick={() => openEditModal(student)}
-                          className="inline-flex items-center gap-2 text-yellow-400 hover:text-yellow-300 font-semibold transition-all"
+                          title="Editar alumno"
+                          aria-label="Editar alumno"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black transition-all"
                         >
                           <Edit size={16} />
-                          Editar
                         </button>
                       </td>
                     </tr>
