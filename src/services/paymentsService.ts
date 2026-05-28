@@ -20,6 +20,22 @@ export type PaymentStudent = {
   is_active: boolean;
 };
 
+export type PaymentRecord = {
+  id: string;
+  student_id: string;
+  payment_date: string;
+  concept: string;
+  method: PaymentMethod | string;
+  amount: number;
+  status: string;
+  notes: string | null;
+  created_at: string;
+  students?: {
+    full_name: string;
+    email: string;
+  } | null;
+};
+
 export type RegisterPaymentPayload = {
   studentId: string;
   membershipType: MembershipType;
@@ -27,6 +43,19 @@ export type RegisterPaymentPayload = {
   amount: number;
   paymentDate: string;
   notes: string;
+};
+
+export type StudentPaymentPortalData = {
+  student: {
+    id: string;
+    full_name: string;
+    email: string;
+    membership_status: MembershipStatus | null;
+    membership_type: MembershipType | null;
+    membership_end_date: string | null;
+    last_payment_date: string | null;
+  } | null;
+  payments: PaymentRecord[];
 };
 
 export async function getPaymentStudents() {
@@ -44,6 +73,35 @@ export async function getPaymentStudents() {
   return (data || []) as PaymentStudent[];
 }
 
+export async function getRecentPayments(limit = 50) {
+  const { data, error } = await supabase
+    .from("payments")
+    .select(
+      "id, student_id, payment_date, concept, method, amount, status, notes, created_at, students(full_name, email)",
+    )
+    .order("payment_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || []) as PaymentRecord[];
+}
+
+export async function getPaymentsAdminData() {
+  const [students, recentPayments] = await Promise.all([
+    getPaymentStudents(),
+    getRecentPayments(80),
+  ]);
+
+  return {
+    students,
+    recentPayments,
+  };
+}
+
 export async function registerAdminPayment(payload: RegisterPaymentPayload) {
   const { error } = await supabase.rpc("register_admin_payment", {
     p_student_id: payload.studentId,
@@ -57,4 +115,43 @@ export async function registerAdminPayment(payload: RegisterPaymentPayload) {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export async function getStudentPaymentPortalData(
+  email: string,
+): Promise<StudentPaymentPortalData> {
+  const { data: studentData, error: studentError } = await supabase
+    .from("students")
+    .select(
+      "id, full_name, email, membership_status, membership_type, membership_end_date, last_payment_date",
+    )
+    .ilike("email", email)
+    .maybeSingle();
+
+  if (studentError) {
+    throw new Error(studentError.message);
+  }
+
+  if (!studentData) {
+    return {
+      student: null,
+      payments: [],
+    };
+  }
+
+  const { data: paymentsData, error: paymentsError } = await supabase
+    .from("payments")
+    .select("id, student_id, payment_date, concept, method, amount, status, notes, created_at")
+    .eq("student_id", studentData.id)
+    .order("payment_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (paymentsError) {
+    throw new Error(paymentsError.message);
+  }
+
+  return {
+    student: studentData as StudentPaymentPortalData["student"],
+    payments: (paymentsData || []) as PaymentRecord[],
+  };
 }

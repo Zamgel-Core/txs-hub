@@ -18,6 +18,11 @@ import { Button } from "@/src/components/ui/Button";
 import { Badge } from "@/src/components/ui/Badge";
 import { PaymentModal } from "@/src/components/alumno/PaymentModal";
 import { supabase } from "@/src/lib/supabase";
+import {
+  AnnouncementWithRead,
+  getStudentAnnouncements,
+  markAnnouncementAsRead,
+} from "@/src/services/announcementsService";
 
 type Student = {
   id: string;
@@ -95,6 +100,7 @@ export function AlumnoDashboard() {
   const [alumno, setAlumno] = useState<Student | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [announcements, setAnnouncements] = useState<AnnouncementWithRead[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [newPassword, setNewPassword] = useState("");
@@ -117,6 +123,7 @@ export function AlumnoDashboard() {
     if (!user?.email) {
       setAlumno(null);
       setGroup(null);
+      setAnnouncements([]);
       setLoading(false);
       return;
     }
@@ -131,6 +138,7 @@ export function AlumnoDashboard() {
       console.error(studentError);
       setAlumno(null);
       setGroup(null);
+      setAnnouncements([]);
       setLoading(false);
       return;
     }
@@ -168,7 +176,33 @@ export function AlumnoDashboard() {
       setAttendance((attendanceData as AttendanceRecord[]) || []);
     }
 
+    try {
+      const announcementsData = await getStudentAnnouncements(studentData.id);
+      setAnnouncements(announcementsData);
+    } catch (announcementsError) {
+      console.error(announcementsError);
+      setAnnouncements([]);
+    }
+
     setLoading(false);
+  }
+
+  async function handleMarkAnnouncementRead(announcementId: string) {
+    if (!alumno) return;
+
+    try {
+      await markAnnouncementAsRead(announcementId, alumno.id);
+      setAnnouncements((current) =>
+        current.map((announcement) =>
+          announcement.id === announcementId
+            ? { ...announcement, read_at: new Date().toISOString() }
+            : announcement,
+        ),
+      );
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo marcar el aviso como leído.");
+    }
   }
 
   async function handleChangePassword() {
@@ -429,25 +463,76 @@ export function AlumnoDashboard() {
               Avisos Recientes
             </h2>
 
-            <Button
-              variant="link"
-              className="text-gold-500 hover:text-gold-400 text-sm h-auto p-0"
-            >
-              Ver todos
-            </Button>
+            <span className="text-sm text-zinc-500">
+              {announcements.filter((item) => !item.read_at).length} nuevo(s)
+            </span>
           </div>
 
-          <Card className="bg-txs-card border-zinc-800/80">
-            <CardContent className="p-6 text-center">
-              <div className="w-12 h-12 rounded-full bg-gold-500/10 flex items-center justify-center mx-auto mb-4">
-                <Bell className="w-5 h-5 text-gold-500" />
-              </div>
-              <p className="text-white font-semibold">Sin avisos recientes</p>
-              <p className="text-sm text-zinc-500 mt-2">
-                Los comunicados publicados por administración aparecerán aquí.
-              </p>
-            </CardContent>
-          </Card>
+          {announcements.length === 0 ? (
+            <Card className="bg-txs-card border-zinc-800/80">
+              <CardContent className="p-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-gold-500/10 flex items-center justify-center mx-auto mb-4">
+                  <Bell className="w-5 h-5 text-gold-500" />
+                </div>
+                <p className="text-white font-semibold">Sin avisos recientes</p>
+                <p className="text-sm text-zinc-500 mt-2">
+                  Los comunicados publicados por administración aparecerán aquí.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {announcements.slice(0, 3).map((announcement) => (
+                <Card
+                  key={announcement.id}
+                  className={`bg-txs-card border-zinc-800/80 ${
+                    !announcement.read_at ? "border-gold-500/30" : ""
+                  }`}
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-full bg-gold-500/10 flex items-center justify-center shrink-0">
+                        <Bell className="w-5 h-5 text-gold-500" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-white">
+                            {announcement.title}
+                          </p>
+
+                          {!announcement.read_at && (
+                            <Badge variant="default">Nuevo</Badge>
+                          )}
+                        </div>
+
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {formatDate(announcement.publish_date)}
+                        </p>
+
+                        <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-zinc-400">
+                          {announcement.body}
+                        </p>
+
+                        {!announcement.read_at && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-4"
+                            onClick={() =>
+                              handleMarkAnnouncementRead(announcement.id)
+                            }
+                          >
+                            Marcar como leído
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
