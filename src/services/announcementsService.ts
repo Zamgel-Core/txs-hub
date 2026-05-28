@@ -1,4 +1,4 @@
-// 📍 Ruta del archivo: src/services/announcementsService.ts
+// 📍 Ruta: src/services/announcementsService.ts
 
 import { supabase } from "@/src/lib/supabase";
 
@@ -51,9 +51,7 @@ export async function getAnnouncementGroups() {
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   return (data || []) as AnnouncementGroup[];
 }
@@ -65,9 +63,7 @@ export async function getAdminAnnouncements() {
     .order("publish_date", { ascending: false })
     .order("created_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   return (data || []) as Announcement[];
 }
@@ -89,9 +85,7 @@ export async function createAnnouncement(payload: SaveAnnouncementPayload) {
     created_by: user?.id || null,
   });
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 }
 
 export async function updateAnnouncement(
@@ -109,12 +103,11 @@ export async function updateAnnouncement(
       publish_date: payload.publishDate,
       expires_at: payload.expiresAt || null,
       is_active: payload.isActive,
+      updated_at: new Date().toISOString(),
     })
     .eq("id", announcementId);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteAnnouncement(announcementId: string) {
@@ -123,13 +116,21 @@ export async function deleteAnnouncement(announcementId: string) {
     .delete()
     .eq("id", announcementId);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 }
 
 export async function getStudentAnnouncements(studentId: string) {
   const today = new Date().toISOString().slice(0, 10);
+
+  const { data: studentData, error: studentError } = await supabase
+    .from("students")
+    .select("id, group_id")
+    .eq("id", studentId)
+    .maybeSingle();
+
+  if (studentError) throw new Error(studentError.message);
+
+  const studentGroupId = studentData?.group_id || null;
 
   const { data: announcementsData, error: announcementsError } = await supabase
     .from("announcements")
@@ -139,28 +140,29 @@ export async function getStudentAnnouncements(studentId: string) {
     .or(`expires_at.is.null,expires_at.gte.${today}`)
     .order("publish_date", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(50);
 
-  if (announcementsError) {
-    throw new Error(announcementsError.message);
-  }
+  if (announcementsError) throw new Error(announcementsError.message);
 
-  const announcements = (announcementsData || []) as Announcement[];
+  const visibleAnnouncements = (
+    (announcementsData || []) as Announcement[]
+  ).filter((announcement) => {
+    if (announcement.target_type === "todos") return true;
+    return announcement.group_id === studentGroupId;
+  });
 
   const { data: readsData, error: readsError } = await supabase
     .from("announcement_reads")
     .select("announcement_id, read_at")
     .eq("student_id", studentId);
 
-  if (readsError) {
-    throw new Error(readsError.message);
-  }
+  if (readsError) throw new Error(readsError.message);
 
   const readMap = new Map(
     (readsData || []).map((item) => [item.announcement_id, item.read_at]),
   );
 
-  return announcements.map((announcement) => ({
+  return visibleAnnouncements.map((announcement) => ({
     ...announcement,
     read_at: readMap.get(announcement.id) || null,
   })) as AnnouncementWithRead[];
@@ -181,7 +183,5 @@ export async function markAnnouncementAsRead(
     },
   );
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 }

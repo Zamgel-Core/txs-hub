@@ -17,6 +17,7 @@ import {
 
 import { Badge } from "@/src/components/ui/Badge";
 import { Button } from "@/src/components/ui/Button";
+import { supabase } from "@/src/lib/supabase";
 import { Card, CardContent } from "@/src/components/ui/Card";
 import {
   Announcement,
@@ -90,6 +91,23 @@ export function Avisos() {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-announcements-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "announcements" },
+        () => {
+          loadData();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   async function loadData() {
@@ -447,7 +465,8 @@ export function Avisos() {
                     onChange={(event) =>
                       setForm({
                         ...form,
-                        targetType: event.target.value as AnnouncementTargetType,
+                        targetType: event.target
+                          .value as AnnouncementTargetType,
                         groupId: "",
                       })
                     }

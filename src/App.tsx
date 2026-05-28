@@ -1,4 +1,4 @@
-// 📍 Ruta del archivo: src/App.tsx
+// 📍 Ruta: src/App.tsx
 
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PublicLayout } from "@/src/components/layouts/PublicLayout";
@@ -27,6 +27,7 @@ import { AlumnoDashboard } from "@/src/pages/alumno/AlumnoDashboard";
 import { AlumnoEventos } from "@/src/pages/alumno/AlumnoEventos";
 import { AlumnoPagos } from "@/src/pages/alumno/AlumnoPagos";
 import { AlumnoSoporte } from "@/src/pages/alumno/AlumnoSoporte";
+import { AlumnoAvisos } from "@/src/pages/alumno/AlumnoAvisos";
 
 import { NotFound } from "@/src/pages/NotFound";
 
@@ -72,6 +73,7 @@ export default function App() {
           }
         >
           <Route index element={<AlumnoDashboard />} />
+          <Route path="avisos" element={<AlumnoAvisos />} />
           <Route path="eventos" element={<AlumnoEventos />} />
           <Route path="pagos" element={<AlumnoPagos />} />
           <Route path="soporte" element={<AlumnoSoporte />} />

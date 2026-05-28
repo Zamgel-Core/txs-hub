@@ -14,7 +14,13 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/src/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { supabase } from "@/src/lib/supabase";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/src/components/ui/Card";
 import {
   createEvent,
   deleteEvent,
@@ -83,6 +89,23 @@ export function Eventos() {
 
   useEffect(() => {
     loadEvents();
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-events-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "events" },
+        () => {
+          loadEvents();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   async function loadEvents() {

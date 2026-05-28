@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/src/components/ui/Button";
 import { Card, CardContent } from "@/src/components/ui/Card";
+import { supabase } from "@/src/lib/supabase";
 import {
   AttendanceGroup,
   AttendanceStatus,
@@ -190,16 +191,28 @@ export function Asistencia() {
   }, [loadAttendanceData]);
 
   useEffect(() => {
-    if (!selectedGroup) return;
+  if (!selectedGroup) return;
 
-    const subscription = window.setTimeout(() => {
-      loadAttendanceData();
-    }, 300);
+  const channel = supabase
+    .channel(`admin-attendance-realtime-${selectedGroup}-${selectedDate}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "attendance",
+        filter: `group_id=eq.${selectedGroup}`,
+      },
+      () => {
+        loadAttendanceData();
+      },
+    )
+    .subscribe();
 
-    return () => {
-      window.clearTimeout(subscription);
-    };
-  }, [loadAttendanceData, selectedGroup]);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [loadAttendanceData, selectedDate, selectedGroup]);
 
   function handleMarkAttendance(studentId: string, status: AttendanceStatus) {
     setAttendance((prev) => ({

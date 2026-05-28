@@ -20,6 +20,7 @@ import { Button } from "@/src/components/ui/Button";
 import { Card, CardContent } from "@/src/components/ui/Card";
 import { Input } from "@/src/components/ui/Input";
 import { Modal } from "@/src/components/ui/Modal";
+import { supabase } from "@/src/lib/supabase";
 
 import {
   getPaymentsAdminData,
@@ -170,6 +171,30 @@ export function Pagos() {
 
   useEffect(() => {
     loadPaymentData();
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-payments-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "payments" },
+        () => {
+          loadPaymentData();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "students" },
+        () => {
+          loadPaymentData();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   async function loadPaymentData() {
@@ -421,7 +446,9 @@ export function Pagos() {
                 <select
                   value={typeFilter}
                   onChange={(event) =>
-                    setTypeFilter(event.target.value as "todos" | MembershipType)
+                    setTypeFilter(
+                      event.target.value as "todos" | MembershipType,
+                    )
                   }
                   className="h-11 rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-sm text-white outline-none focus:border-gold-500"
                 >
@@ -551,7 +578,9 @@ export function Pagos() {
                         <p className="mt-1 text-sm text-zinc-500">
                           {formatDate(student.membership_end_date)}
                         </p>
-                        <p className={`mt-2 text-sm font-semibold ${meta.className}`}>
+                        <p
+                          className={`mt-2 text-sm font-semibold ${meta.className}`}
+                        >
                           {meta.label}
                         </p>
                       </div>
@@ -728,7 +757,9 @@ export function Pagos() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm text-zinc-400">Notas / referencia</label>
+              <label className="text-sm text-zinc-400">
+                Notas / referencia
+              </label>
 
               <textarea
                 rows={4}

@@ -6,10 +6,14 @@ import {
   Bell,
   Calendar,
   CheckCircle2,
+  Clock3,
   CreditCard,
   Lock,
   MapPin,
+  Megaphone,
   User,
+  UserCheck,
+  Users,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -93,14 +97,22 @@ function getMembershipBadge(status: Student["membership_status"]) {
     return <Badge variant="warning">Pendiente</Badge>;
   }
 
-  return <Badge variant="neutral">Vencida</Badge>;
+  return <Badge variant="danger">Vencida</Badge>;
+}
+
+function getAttendanceBadge(status: AttendanceRecord["status"]) {
+  if (status === "presente") return <Badge variant="success">Presente</Badge>;
+  if (status === "retardo") return <Badge variant="warning">Retardo</Badge>;
+  return <Badge variant="danger">Falta</Badge>;
 }
 
 export function AlumnoDashboard() {
   const [alumno, setAlumno] = useState<Student | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [announcements, setAnnouncements] = useState<AnnouncementWithRead[]>([]);
+  const [announcements, setAnnouncements] = useState<AnnouncementWithRead[]>(
+    [],
+  );
 
   const [loading, setLoading] = useState(true);
   const [newPassword, setNewPassword] = useState("");
@@ -112,6 +124,95 @@ export function AlumnoDashboard() {
   useEffect(() => {
     loadAlumno();
   }, []);
+
+  useEffect(() => {
+    if (!alumno?.id) return;
+
+    const refreshAlumno = () => {
+      loadAlumno();
+    };
+
+    window.addEventListener("txs:membership-live-changed", refreshAlumno);
+
+    const channel = supabase
+      .channel(`student-dashboard-payments-${alumno.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "payments",
+          filter: `student_id=eq.${alumno.id}`,
+        },
+        refreshAlumno,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "students",
+          filter: `id=eq.${alumno.id}`,
+        },
+        refreshAlumno,
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("txs:membership-live-changed", refreshAlumno);
+      supabase.removeChannel(channel);
+    };
+  }, [alumno?.id]);
+
+  useEffect(() => {
+    if (!alumno?.id) return;
+
+    const refreshAttendance = () => {
+      loadAlumno();
+    };
+
+    const channel = supabase
+      .channel(`student-dashboard-attendance-${alumno.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "attendance",
+          filter: `student_id=eq.${alumno.id}`,
+        },
+        refreshAttendance,
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [alumno?.id]);
+
+  useEffect(() => {
+    if (!alumno?.id) return;
+
+    const handleAnnouncementsLiveChanged = () => {
+      getStudentAnnouncements(alumno.id)
+        .then(setAnnouncements)
+        .catch((error) => {
+          console.error("Error actualizando avisos del dashboard:", error);
+        });
+    };
+
+    window.addEventListener(
+      "txs:announcements-live-changed",
+      handleAnnouncementsLiveChanged,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "txs:announcements-live-changed",
+        handleAnnouncementsLiveChanged,
+      );
+    };
+  }, [alumno?.id]);
 
   async function loadAlumno() {
     setLoading(true);
@@ -192,6 +293,7 @@ export function AlumnoDashboard() {
 
     try {
       await markAnnouncementAsRead(announcementId, alumno.id);
+
       setAnnouncements((current) =>
         current.map((announcement) =>
           announcement.id === announcementId
@@ -199,6 +301,8 @@ export function AlumnoDashboard() {
             : announcement,
         ),
       );
+
+      window.dispatchEvent(new CustomEvent("txs:announcements-read-changed"));
     } catch (error) {
       console.error(error);
       alert("No se pudo marcar el aviso como leído.");
@@ -250,6 +354,12 @@ export function AlumnoDashboard() {
     return Math.round((present / total) * 100);
   }, [attendance]);
 
+  const unreadAnnouncements = useMemo(() => {
+    return announcements.filter((item) => !item.read_at).length;
+  }, [announcements]);
+
+  const latestAnnouncement = announcements[0] || null;
+
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-gold-400">
@@ -268,24 +378,26 @@ export function AlumnoDashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-gold-500/10 via-txs-card to-zinc-900/80 p-8 sm:p-10 rounded-2xl border border-zinc-800/80 shadow-[0_0_30px_rgba(0,0,0,0.5)] relative overflow-hidden group">
-        <div className="absolute top-0 right-0 p-32 bg-gold-500/10 rounded-full blur-[80px] pointer-events-none group-hover:bg-gold-500/20 transition-all duration-700" />
+      <section className="relative overflow-hidden rounded-3xl border border-gold-500/20 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-gold-500/15 via-txs-card to-black p-6 sm:p-8 shadow-[0_0_45px_rgba(212,175,55,0.08)]">
+        <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-gold-500/10 blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 w-full flex flex-col md:flex-row justify-between md:items-center gap-6">
+        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl sm:text-5xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-gold-500 to-gold-600 mb-3 drop-shadow-md">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-gold-500/25 bg-black/30 px-3 py-1 text-xs font-semibold text-gold-400">
+              <UserCheck className="h-4 w-4" />
+              Portal del alumno
+            </div>
+
+            <h1 className="text-3xl sm:text-5xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-gold-500 to-gold-600">
               ¡Hola, {getFirstName(alumno.full_name)}!
             </h1>
 
-            <p className="text-zinc-400 text-lg font-light">
+            <p className="mt-3 max-w-3xl text-sm sm:text-base leading-relaxed text-zinc-400">
               {group ? (
                 <>
                   Tu grupo actual es{" "}
-                  <strong className="text-white font-medium">
-                    {group.name}
-                  </strong>
-                  . Tienes{" "}
-                  <strong className="text-white font-medium">
+                  <strong className="text-white">{group.name}</strong>. Tienes{" "}
+                  <strong className="text-white">
                     {classCount || "—"} clase(s)
                   </strong>{" "}
                   programadas según tu horario.
@@ -296,113 +408,39 @@ export function AlumnoDashboard() {
             </p>
           </div>
 
-          <div className="relative z-10 w-full md:w-auto">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link to="/alumno/avisos">
+              <Button variant="outline" className="w-full gap-2 sm:w-auto">
+                <Bell className="h-4 w-4" />
+                Avisos{" "}
+                {unreadAnnouncements > 0 ? `(${unreadAnnouncements})` : ""}
+              </Button>
+            </Link>
+
             <Button
               variant="gold"
-              className="gap-2 shadow-lg shadow-gold-500/20"
+              className="w-full gap-2 shadow-lg shadow-gold-500/20 sm:w-auto"
               onClick={() => setPaymentModalOpen(true)}
             >
-              <CreditCard className="w-5 h-5" />
+              <CreditCard className="h-5 w-5" />
               Pagar Membresía
             </Button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <Card className="bg-txs-card border-zinc-800/80">
-        <CardContent className="p-6 space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gold-500/10 flex items-center justify-center">
-              <User className="w-6 h-6 text-gold-500" />
-            </div>
-
-            <div>
-              <h2 className="text-2xl font-display font-bold text-white">
-                Mi Cuenta
-              </h2>
-              <p className="text-sm text-zinc-400">
-                Información personal y acceso.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <p className="text-zinc-500 text-sm mb-1">Nombre</p>
-              <p className="text-white font-medium">{alumno.full_name}</p>
-            </div>
-
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <p className="text-zinc-500 text-sm mb-1">Correo</p>
-              <p className="text-white font-medium break-all">{alumno.email}</p>
-            </div>
-
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <p className="text-zinc-500 text-sm mb-1">Teléfono</p>
-              <p className="text-white font-medium">{alumno.phone || "—"}</p>
-            </div>
-
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <p className="text-zinc-500 text-sm mb-1">Grupo</p>
-              <p className="text-gold-400 font-semibold">
-                {group?.name || alumno.group_level || "Sin grupo"}
-              </p>
-              {group && (
-                <p className="text-xs text-zinc-500 mt-1">
-                  {group.days} • {group.schedule}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="border-t border-zinc-800 pt-6 space-y-4">
-            <div className="flex items-center gap-2">
-              <Lock className="w-5 h-5 text-gold-500" />
-              <h3 className="text-white font-semibold text-lg">
-                Cambiar contraseña
-              </h3>
-            </div>
-
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <p className="text-zinc-500 text-sm mb-2">
-                Contraseña temporal asignada
-              </p>
-              <p className="text-gold-400 font-semibold tracking-wider">
-                {maskPassword(alumno.temporary_password)}
-              </p>
-            </div>
-
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Nueva contraseña"
-              className="w-full h-12 rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none focus:border-gold-500"
-            />
-
-            <Button
-              variant="gold"
-              onClick={handleChangePassword}
-              disabled={savingPassword}
-              className="w-full md:w-auto"
-            >
-              {savingPassword ? "Actualizando..." : "Actualizar contraseña"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="bg-txs-card border-zinc-800/80 hover:border-gold-500/20 transition-colors">
           <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+            <div className="mb-4 flex items-start justify-between">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/10">
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
               </div>
               {getMembershipBadge(alumno.membership_status)}
             </div>
-            <p className="text-sm text-zinc-500">Estado Actual</p>
-            <p className="text-xl font-bold text-white font-display mt-1">
+
+            <p className="text-sm text-zinc-500">Estado actual</p>
+            <p className="mt-1 text-xl font-display font-bold text-white">
               {getMembershipLabel(alumno.membership_status)}
             </p>
           </CardContent>
@@ -410,13 +448,12 @@ export function AlumnoDashboard() {
 
         <Card className="bg-txs-card border-zinc-800/80 hover:border-gold-500/20 transition-colors">
           <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-10 h-10 rounded-full bg-gold-500/10 flex items-center justify-center">
-                <Calendar className="w-5 h-5 text-gold-500" />
-              </div>
+            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-gold-500/10">
+              <Calendar className="h-5 w-5 text-gold-500" />
             </div>
-            <p className="text-sm text-zinc-500">Fecha de Vencimiento</p>
-            <p className="text-xl font-bold text-white font-display mt-1">
+
+            <p className="text-sm text-zinc-500">Vencimiento</p>
+            <p className="mt-1 text-xl font-display font-bold text-white">
               {formatDate(alumno.membership_end_date)}
             </p>
           </CardContent>
@@ -424,13 +461,12 @@ export function AlumnoDashboard() {
 
         <Card className="bg-txs-card border-zinc-800/80 hover:border-gold-500/20 transition-colors">
           <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                <CreditCard className="w-5 h-5 text-zinc-300" />
-              </div>
+            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-zinc-800">
+              <CreditCard className="h-5 w-5 text-zinc-300" />
             </div>
-            <p className="text-sm text-zinc-500">Tipo de Membresía</p>
-            <p className="text-xl font-bold text-white font-display mt-1 capitalize">
+
+            <p className="text-sm text-zinc-500">Tipo de membresía</p>
+            <p className="mt-1 text-xl font-display font-bold text-white capitalize">
               {alumno.membership_type || "Pendiente"}
             </p>
           </CardContent>
@@ -438,14 +474,13 @@ export function AlumnoDashboard() {
 
         <Card className="bg-txs-card border-zinc-800/80 hover:border-gold-500/20 transition-colors">
           <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                <AlertCircle className="w-5 h-5 text-blue-500" />
-              </div>
+            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-blue-500/10">
+              <AlertCircle className="h-5 w-5 text-blue-500" />
             </div>
-            <p className="text-sm text-zinc-500">Asistencia Reciente</p>
-            <div className="flex items-baseline gap-2 mt-1">
-              <p className="text-xl font-bold text-white font-display">
+
+            <p className="text-sm text-zinc-500">Asistencia reciente</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <p className="text-xl font-display font-bold text-white">
                 {attendanceStats !== null ? `${attendanceStats}%` : "—"}
               </p>
               <span className="text-xs text-zinc-500">
@@ -454,171 +489,349 @@ export function AlumnoDashboard() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-display font-bold text-white">
-              Avisos Recientes
-            </h2>
-
-            <span className="text-sm text-zinc-500">
-              {announcements.filter((item) => !item.read_at).length} nuevo(s)
-            </span>
-          </div>
-
-          {announcements.length === 0 ? (
-            <Card className="bg-txs-card border-zinc-800/80">
-              <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 rounded-full bg-gold-500/10 flex items-center justify-center mx-auto mb-4">
-                  <Bell className="w-5 h-5 text-gold-500" />
-                </div>
-                <p className="text-white font-semibold">Sin avisos recientes</p>
-                <p className="text-sm text-zinc-500 mt-2">
-                  Los comunicados publicados por administración aparecerán aquí.
+      <section className="grid grid-cols-1 gap-8 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="overflow-hidden border-gold-500/25 bg-gradient-to-br from-gold-500/10 via-txs-card to-black shadow-[0_0_35px_rgba(212,175,55,0.06)]">
+          <CardContent className="p-6 sm:p-7">
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-display font-bold text-white">
+                  Próxima clase
+                </h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Horario asignado según tu grupo actual.
                 </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {announcements.slice(0, 3).map((announcement) => (
-                <Card
-                  key={announcement.id}
-                  className={`bg-txs-card border-zinc-800/80 ${
-                    !announcement.read_at ? "border-gold-500/30" : ""
-                  }`}
-                >
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gold-500/10 flex items-center justify-center shrink-0">
-                        <Bell className="w-5 h-5 text-gold-500" />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-white">
-                            {announcement.title}
-                          </p>
-
-                          {!announcement.read_at && (
-                            <Badge variant="default">Nuevo</Badge>
-                          )}
-                        </div>
-
-                        <p className="mt-1 text-xs text-zinc-500">
-                          {formatDate(announcement.publish_date)}
-                        </p>
-
-                        <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-zinc-400">
-                          {announcement.body}
-                        </p>
-
-                        {!announcement.read_at && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-4"
-                            onClick={() =>
-                              handleMarkAnnouncementRead(announcement.id)
-                            }
-                          >
-                            Marcar como leído
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-display font-bold text-white">
-              Asistencia Reciente
-            </h2>
-          </div>
-
-          <Card className="bg-txs-card border-zinc-800 overflow-hidden">
-            <CardContent className="p-0">
-              <div className="divide-y divide-zinc-800/80">
-                {attendance.length === 0 ? (
-                  <div className="p-6 text-center text-zinc-500">
-                    Sin registros de asistencia todavía.
-                  </div>
-                ) : (
-                  attendance.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between p-4 hover:bg-zinc-900/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-gold-500" />
-                        <div>
-                          <p className="text-sm font-medium text-white capitalize">
-                            {item.status}
-                          </p>
-                          <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                            {formatDate(item.attendance_date)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <Badge variant="neutral">{item.status}</Badge>
-                    </div>
-                  ))
-                )}
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
 
-      <div>
-        <div className="flex items-center justify-between mb-4 mt-4">
-          <h2 className="text-xl font-display font-bold text-white">
-            Próximas Clases
-          </h2>
+              <Link to="/alumno/eventos">
+                <Button variant="outline" size="sm">
+                  Ver clases
+                </Button>
+              </Link>
+            </div>
 
-          <Link to="/alumno/eventos">
-            <Button
-              variant="link"
-              className="text-gold-500 hover:text-gold-400 text-sm h-auto p-0"
-            >
-              Ver calendario completo
-            </Button>
-          </Link>
-        </div>
-
-        <Card className="bg-txs-card border-zinc-800/80">
-          <CardContent className="p-6">
             {group ? (
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div>
-                  <h3 className="font-bold text-lg text-white">{group.name}</h3>
-                  <p className="text-sm text-zinc-400 mt-1">
-                    Instructor: {group.instructor}
-                  </p>
-                  <p className="text-sm text-zinc-400 mt-1">
-                    {group.days} • {group.schedule}
-                  </p>
+              <div className="space-y-5">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-gold-500/25 bg-gold-500/10">
+                    <Users className="h-7 w-7 text-gold-400" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {getMembershipBadge(alumno.membership_status)}
+                      <Badge variant="default">Grupo asignado</Badge>
+                    </div>
+
+                    <h3 className="text-2xl font-display font-bold text-white leading-tight">
+                      {group.name}
+                    </h3>
+
+                    <p className="mt-2 text-sm text-zinc-400">
+                      Nivel:{" "}
+                      <span className="font-semibold text-gold-400">
+                        {group.level || alumno.group_level || "Sin nivel"}
+                      </span>
+                    </p>
+                  </div>
                 </div>
 
-                <div className="w-12 h-12 rounded-xl bg-gold-500/10 flex items-center justify-center">
-                  <MapPin className="w-5 h-5 text-gold-500" />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4">
+                    <Calendar className="mb-3 h-5 w-5 text-gold-400" />
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Días
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {group.days || "Por confirmar"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4">
+                    <Clock3 className="mb-3 h-5 w-5 text-gold-400" />
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Horario
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {group.schedule || "Por confirmar"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4">
+                    <UserCheck className="mb-3 h-5 w-5 text-gold-400" />
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Instructor
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {group.instructor || "Por confirmar"}
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : (
-              <p className="text-zinc-500 text-center">
-                No tienes clases asignadas todavía.
-              </p>
+              <div className="rounded-2xl border border-zinc-800 bg-black/30 p-8 text-center">
+                <Calendar className="mx-auto mb-4 h-10 w-10 text-gold-400" />
+                <h3 className="text-lg font-bold text-white">
+                  Aún no tienes un grupo asignado
+                </h3>
+                <p className="mt-2 text-sm text-zinc-500">
+                  Cuando administración te asigne un grupo, aquí aparecerán tus
+                  clases semanales.
+                </p>
+              </div>
             )}
           </CardContent>
         </Card>
-      </div>
+
+        <Card className="bg-txs-card border-zinc-800/80">
+          <CardContent className="p-6 sm:p-7">
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-display font-bold text-white">
+                  Avisos nuevos
+                </h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {unreadAnnouncements} comunicado(s) sin leer.
+                </p>
+              </div>
+
+              <Link to="/alumno/avisos">
+                <Button variant="outline" size="sm">
+                  Ver todos
+                </Button>
+              </Link>
+            </div>
+
+            {latestAnnouncement ? (
+              <div
+                className={`rounded-2xl border p-5 ${
+                  latestAnnouncement.read_at
+                    ? "border-zinc-800 bg-black/25"
+                    : "border-gold-500/30 bg-gold-500/10"
+                }`}
+              >
+                <div className="mb-4 flex items-start gap-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold-500/10">
+                    <Megaphone className="h-5 w-5 text-gold-400" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold text-white">
+                        {latestAnnouncement.title}
+                      </h3>
+
+                      {!latestAnnouncement.read_at && (
+                        <Badge variant="default">Nuevo</Badge>
+                      )}
+                    </div>
+
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {formatDate(latestAnnouncement.publish_date)}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="line-clamp-4 text-sm leading-relaxed text-zinc-400">
+                  {latestAnnouncement.body}
+                </p>
+
+                {!latestAnnouncement.read_at && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-5"
+                    onClick={() =>
+                      handleMarkAnnouncementRead(latestAnnouncement.id)
+                    }
+                  >
+                    Marcar como leído
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-zinc-800 bg-black/25 p-8 text-center">
+                <Bell className="mx-auto mb-4 h-10 w-10 text-gold-400" />
+                <p className="font-semibold text-white">Sin avisos recientes</p>
+                <p className="mt-2 text-sm text-zinc-500">
+                  Los comunicados publicados por administración aparecerán aquí.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <Card className="bg-txs-card border-zinc-800/80">
+          <CardContent className="p-6 sm:p-7 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gold-500/10">
+                <User className="h-6 w-6 text-gold-500" />
+              </div>
+
+              <div>
+                <h2 className="text-2xl font-display font-bold text-white">
+                  Mi cuenta
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  Información personal y acceso.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+                <p className="mb-1 text-sm text-zinc-500">Nombre</p>
+                <p className="font-medium text-white">{alumno.full_name}</p>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+                <p className="mb-1 text-sm text-zinc-500">Correo</p>
+                <p className="break-all font-medium text-white">
+                  {alumno.email}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+                <p className="mb-1 text-sm text-zinc-500">Teléfono</p>
+                <p className="font-medium text-white">{alumno.phone || "—"}</p>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+                <p className="mb-1 text-sm text-zinc-500">Grupo</p>
+                <p className="font-semibold text-gold-400">
+                  {group?.name || alumno.group_level || "Sin grupo"}
+                </p>
+                {group && (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {group.days} • {group.schedule}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4 border-t border-zinc-800 pt-6">
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-gold-500" />
+                <h3 className="text-lg font-semibold text-white">
+                  Cambiar contraseña
+                </h3>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+                <p className="mb-2 text-sm text-zinc-500">
+                  Contraseña temporal asignada
+                </p>
+                <p className="font-semibold tracking-wider text-gold-400">
+                  {maskPassword(alumno.temporary_password)}
+                </p>
+              </div>
+
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                placeholder="Nueva contraseña"
+                className="h-12 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none transition focus:border-gold-500"
+              />
+
+              {message && <p className="text-sm text-gold-400">{message}</p>}
+
+              <Button
+                variant="gold"
+                onClick={handleChangePassword}
+                disabled={savingPassword}
+                className="w-full md:w-auto"
+              >
+                {savingPassword ? "Actualizando..." : "Actualizar contraseña"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-txs-card border-zinc-800/80 overflow-hidden">
+          <CardContent className="p-0">
+            <div className="border-b border-zinc-800 p-6 sm:p-7">
+              <h2 className="text-2xl font-display font-bold text-white">
+                Asistencia reciente
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Tus últimos registros de asistencia.
+              </p>
+            </div>
+
+            <div className="divide-y divide-zinc-800/80">
+              {attendance.length === 0 ? (
+                <div className="p-8 text-center text-zinc-500">
+                  Sin registros de asistencia todavía.
+                </div>
+              ) : (
+                attendance.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-zinc-900/30"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-2 w-2 rounded-full bg-gold-500" />
+                      <div>
+                        <p className="text-sm font-medium capitalize text-white">
+                          {item.status}
+                        </p>
+                        <p className="mt-0.5 font-mono text-xs text-zinc-500">
+                          {formatDate(item.attendance_date)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {getAttendanceBadge(item.status)}
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Link to="/alumno/eventos">
+          <Card className="h-full bg-txs-card border-zinc-800/80 hover:border-gold-500/30 transition-colors">
+            <CardContent className="p-5">
+              <Calendar className="mb-4 h-6 w-6 text-gold-400" />
+              <h3 className="font-bold text-white">Clases y eventos</h3>
+              <p className="mt-2 text-sm text-zinc-500">
+                Consulta tu horario y eventos próximos.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link to="/alumno/pagos">
+          <Card className="h-full bg-txs-card border-zinc-800/80 hover:border-gold-500/30 transition-colors">
+            <CardContent className="p-5">
+              <CreditCard className="mb-4 h-6 w-6 text-gold-400" />
+              <h3 className="font-bold text-white">Historial de pagos</h3>
+              <p className="mt-2 text-sm text-zinc-500">
+                Revisa pagos, membresía y vencimientos.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link to="/alumno/soporte">
+          <Card className="h-full bg-txs-card border-zinc-800/80 hover:border-gold-500/30 transition-colors">
+            <CardContent className="p-5">
+              <MapPin className="mb-4 h-6 w-6 text-gold-400" />
+              <h3 className="font-bold text-white">Soporte</h3>
+              <p className="mt-2 text-sm text-zinc-500">
+                Contacta a administración si necesitas ayuda.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+      </section>
+
       <PaymentModal
         isOpen={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}

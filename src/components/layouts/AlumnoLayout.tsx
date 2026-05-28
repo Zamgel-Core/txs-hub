@@ -1,7 +1,6 @@
-// 📍 Ruta del archivo: src/components/layout/AlumnoLayout.tsx
-
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  Bell,
   Calendar,
   CreditCard,
   LayoutDashboard,
@@ -14,6 +13,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "../ui/Button";
 import { supabase } from "@/src/lib/supabase";
+import { getStudentAnnouncements } from "@/src/services/announcementsService";
 
 type Student = {
   id: string;
@@ -24,20 +24,14 @@ type Student = {
 
 function getInitials(name: string) {
   const parts = name.trim().split(" ").filter(Boolean);
-
   if (parts.length === 0) return "TX";
-
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
 }
 
 function getMembershipText(status: Student["membership_status"]) {
   if (status === "activa") return "Membresía Activa";
   if (status === "pendiente") return "Membresía Pendiente";
-
   return "Membresía Vencida";
 }
 
@@ -56,6 +50,7 @@ function getMembershipClass(status: Student["membership_status"]) {
 export function AlumnoLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [student, setStudent] = useState<Student | null>(null);
+  const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -67,6 +62,59 @@ export function AlumnoLayout() {
   useEffect(() => {
     loadStudentHeader();
   }, []);
+
+  useEffect(() => {
+    if (!student?.id) return;
+
+    loadUnreadAnnouncements(student.id);
+
+    const channel = supabase
+      .channel(`student-announcements-${student.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "announcements" },
+        () => {
+          loadUnreadAnnouncements(student.id);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "announcement_reads",
+          filter: `student_id=eq.${student.id}`,
+        },
+        () => {
+          loadUnreadAnnouncements(student.id);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [student?.id]);
+
+  useEffect(() => {
+    if (!student?.id) return;
+
+    const handleAnnouncementsReadChanged = () => {
+      loadUnreadAnnouncements(student.id);
+    };
+
+    window.addEventListener(
+      "txs:announcements-read-changed",
+      handleAnnouncementsReadChanged,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "txs:announcements-read-changed",
+        handleAnnouncementsReadChanged,
+      );
+    };
+  }, [student?.id]);
 
   async function loadStudentHeader() {
     const {
@@ -93,6 +141,21 @@ export function AlumnoLayout() {
     setStudent(data as Student | null);
   }
 
+  async function loadUnreadAnnouncements(studentId: string) {
+    try {
+      const data = await getStudentAnnouncements(studentId);
+      const unread = data.filter(
+        (announcement) => !announcement.read_at,
+      ).length;
+      setUnreadAnnouncements(unread);
+
+      window.dispatchEvent(new CustomEvent("txs:announcements-live-changed"));
+    } catch (error) {
+      console.error("Error cargando contador de avisos:", error);
+      setUnreadAnnouncements(0);
+    }
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut();
     navigate("/login");
@@ -103,6 +166,12 @@ export function AlumnoLayout() {
 
   const navItems = [
     { name: "Mi Portal", path: "/alumno", icon: LayoutDashboard },
+    {
+      name: "Avisos",
+      path: "/alumno/avisos",
+      icon: Bell,
+      badge: unreadAnnouncements,
+    },
     { name: "Clases y Eventos", path: "/alumno/eventos", icon: Calendar },
     { name: "Historial de Pagos", path: "/alumno/pagos", icon: CreditCard },
     { name: "Soporte", path: "/alumno/soporte", icon: MessageSquare },
@@ -148,26 +217,37 @@ export function AlumnoLayout() {
         <div className="flex-1 overflow-y-auto py-6">
           <nav className="space-y-2 px-4">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
+              const isActive =
+                item.path === "/alumno"
+                  ? location.pathname === "/alumno"
+                  : location.pathname.startsWith(item.path);
 
               return (
                 <Link
                   key={item.name}
                   to={item.path}
-                  className={`flex items-center gap-3 px-4 py-3.5 md:py-3 rounded-lg text-base md:text-sm font-medium transition-all duration-300 ${
+                  className={`flex items-center justify-between gap-3 px-4 py-3.5 md:py-3 rounded-lg text-base md:text-sm font-medium transition-all duration-300 ${
                     isActive
                       ? "bg-gradient-to-r from-gold-500/10 to-transparent text-gold-400 border border-gold-500/20 shadow-sm"
                       : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/40"
                   }`}
                   onClick={() => setSidebarOpen(false)}
                 >
-                  <item.icon
-                    className={`w-5 h-5 ${
-                      isActive ? "text-gold-500" : "text-zinc-500"
-                    }`}
-                  />
+                  <span className="flex items-center gap-3">
+                    <item.icon
+                      className={`w-5 h-5 ${
+                        isActive ? "text-gold-500" : "text-zinc-500"
+                      }`}
+                    />
 
-                  {item.name}
+                    {item.name}
+                  </span>
+
+                  {item.badge && item.badge > 0 ? (
+                    <span className="min-w-5 h-5 px-1.5 rounded-full bg-gold-500 text-black text-[11px] font-bold flex items-center justify-center shadow-[0_0_18px_rgba(212,175,55,0.35)]">
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}
@@ -207,6 +287,19 @@ export function AlumnoLayout() {
 
           <div className="flex-1 flex justify-end">
             <div className="flex items-center gap-4">
+              <Link
+                to="/alumno/avisos"
+                className="relative hidden sm:flex w-10 h-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-gold-400 hover:border-gold-500/30 hover:bg-gold-500/10 transition-all"
+              >
+                <Bell className="w-4 h-4" />
+
+                {unreadAnnouncements > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-gold-500 text-black text-[10px] font-bold flex items-center justify-center shadow-[0_0_18px_rgba(212,175,55,0.5)]">
+                    {unreadAnnouncements > 99 ? "99+" : unreadAnnouncements}
+                  </span>
+                )}
+              </Link>
+
               <div
                 className={`hidden sm:inline-flex px-3 py-1 rounded-full border text-xs font-semibold ${getMembershipClass(
                   student?.membership_status || "vencida",

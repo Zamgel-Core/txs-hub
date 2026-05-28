@@ -72,6 +72,43 @@ export function AlumnoPagos() {
     loadPayments();
   }, []);
 
+  useEffect(() => {
+    if (!student?.id) return;
+
+    const refreshPayments = () => {
+      loadPayments();
+      window.dispatchEvent(new CustomEvent("txs:membership-live-changed"));
+    };
+
+    const channel = supabase
+      .channel(`student-payments-realtime-${student.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "payments",
+          filter: `student_id=eq.${student.id}`,
+        },
+        refreshPayments,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "students",
+          filter: `id=eq.${student.id}`,
+        },
+        refreshPayments,
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [student?.id]);
+
   async function loadPayments() {
     try {
       setLoading(true);
@@ -154,7 +191,9 @@ export function AlumnoPagos() {
               <CardContent className="p-5">
                 <ShieldCheck className="mb-4 h-6 w-6 text-emerald-400" />
                 <p className="text-sm text-zinc-500">Estado</p>
-                <div className="mt-2">{getMembershipBadge(student.membership_status)}</div>
+                <div className="mt-2">
+                  {getMembershipBadge(student.membership_status)}
+                </div>
               </CardContent>
             </Card>
 
@@ -200,7 +239,8 @@ export function AlumnoPagos() {
                     {formatMoney(Number(lastPayment.amount || 0))}
                   </h2>
                   <p className="mt-1 text-sm text-zinc-400">
-                    {lastPayment.concept} · {formatDate(lastPayment.payment_date)}
+                    {lastPayment.concept} ·{" "}
+                    {formatDate(lastPayment.payment_date)}
                   </p>
                 </div>
 

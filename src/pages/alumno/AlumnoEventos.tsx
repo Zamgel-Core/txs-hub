@@ -1,4 +1,4 @@
-// 📍 Ruta del archivo: src/pages/alumno/AlumnoEventos.tsx
+// 📍 Ruta: src/pages/alumno/AlumnoEventos.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -12,6 +12,8 @@ import {
   Share2,
   Sparkles,
   Star,
+  UserCheck,
+  Users,
   X,
 } from "lucide-react";
 
@@ -19,7 +21,25 @@ import { Badge } from "@/src/components/ui/Badge";
 import { Button } from "@/src/components/ui/Button";
 import { Card, CardContent } from "@/src/components/ui/Card";
 import { Input } from "@/src/components/ui/Input";
+import { supabase } from "@/src/lib/supabase";
 import { EventItem, getActiveEvents } from "@/src/services/eventsService";
+
+type Student = {
+  id: string;
+  full_name: string;
+  email: string;
+  group_id: string | null;
+  membership_status: "activa" | "vencida" | "pendiente" | null;
+};
+
+type Group = {
+  id: string;
+  name: string;
+  instructor: string;
+  schedule: string;
+  level: string;
+  days: string | null;
+};
 
 function formatEventDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("es-MX", {
@@ -95,12 +115,18 @@ function getEventStatus(event: EventItem) {
   };
 }
 
+function getMembershipBadge(status: Student["membership_status"]) {
+  if (status === "activa")
+    return <Badge variant="success">Membresía activa</Badge>;
+  if (status === "pendiente")
+    return <Badge variant="warning">Membresía pendiente</Badge>;
+  return <Badge variant="danger">Membresía vencida</Badge>;
+}
+
 function buildShareText(event: EventItem) {
   const parts = [
     `🔥 ${event.title}`,
-    `${formatEventDate(event.event_date)}${
-      event.event_time ? ` • ${event.event_time}` : ""
-    }`,
+    `${formatEventDate(event.event_date)}${event.event_time ? ` • ${event.event_time}` : ""}`,
     event.location ? `📍 ${event.location}` : "",
     event.description,
     event.maps_url ? `Ubicación: ${event.maps_url}` : "",
@@ -439,22 +465,86 @@ function EventCard({ event, onOpen, featured = false }: EventCardProps) {
 
 export function AlumnoEventos() {
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [student, setStudent] = useState<Student | null>(null);
+  const [group, setGroup] = useState<Group | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadEvents();
+    loadPageData();
   }, []);
 
-  async function loadEvents() {
+  useEffect(() => {
+    const refreshEvents = async () => {
+      try {
+        const eventsData = await getActiveEvents();
+        setEvents(eventsData);
+      } catch (error) {
+        console.error("Error actualizando eventos realtime:", error);
+      }
+    };
+
+    const channel = supabase
+      .channel("student-events-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "events" },
+        refreshEvents,
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  async function loadPageData() {
     try {
       setLoading(true);
-      const data = await getActiveEvents();
-      setEvents(data);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      let currentStudent: Student | null = null;
+
+      if (user?.email) {
+        const { data: studentData, error: studentError } = await supabase
+          .from("students")
+          .select("id, full_name, email, group_id, membership_status")
+          .ilike("email", user.email)
+          .maybeSingle();
+
+        if (studentError) {
+          console.error("Error cargando alumno:", studentError);
+        }
+
+        currentStudent = (studentData as Student | null) || null;
+        setStudent(currentStudent);
+
+        if (currentStudent?.group_id) {
+          const { data: groupData, error: groupError } = await supabase
+            .from("groups")
+            .select("id, name, instructor, schedule, level, days")
+            .eq("id", currentStudent.group_id)
+            .maybeSingle();
+
+          if (groupError) {
+            console.error("Error cargando grupo:", groupError);
+          }
+
+          setGroup((groupData as Group | null) || null);
+        } else {
+          setGroup(null);
+        }
+      }
+
+      const eventsData = await getActiveEvents();
+      setEvents(eventsData);
     } catch (error) {
-      console.error("Error cargando eventos:", error);
-      alert("No se pudieron cargar los eventos.");
+      console.error("Error cargando clases y eventos:", error);
+      alert("No se pudieron cargar las clases y eventos.");
     } finally {
       setLoading(false);
     }
@@ -492,14 +582,14 @@ export function AlumnoEventos() {
 
   return (
     <>
-      <div className="space-y-8 pb-10">
+      <div className="space-y-10 pb-10">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div>
             <h1 className="text-4xl font-bold tracking-tight text-white">
               Clases y Eventos
             </h1>
             <p className="mt-2 text-zinc-400">
-              Explora las actividades y eventos próximos de TXS.
+              Consulta tus clases semanales y próximos eventos de TXS.
             </p>
           </div>
 
@@ -514,29 +604,131 @@ export function AlumnoEventos() {
           </div>
         </div>
 
-        {featuredEvent && (
-          <EventCard event={featuredEvent} onOpen={setSelectedEvent} featured />
-        )}
-
-        {filteredEvents.length === 0 ? (
-          <Card>
-            <CardContent className="p-10 text-center">
-              <p className="text-zinc-500">
-                No hay eventos disponibles por ahora.
-              </p>
-            </CardContent>
-          </Card>
-        ) : regularEvents.length > 0 ? (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {regularEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                onOpen={setSelectedEvent}
-              />
-            ))}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Mis clases</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Horario asignado según tu grupo actual.
+            </p>
           </div>
-        ) : null}
+
+          {group ? (
+            <Card className="overflow-hidden border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 via-zinc-950 to-black shadow-2xl shadow-yellow-500/5">
+              <CardContent className="p-6 md:p-8">
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-yellow-500/25 bg-yellow-500/10">
+                      <Users className="h-7 w-7 text-yellow-400" />
+                    </div>
+
+                    <div>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {student &&
+                          getMembershipBadge(student.membership_status)}
+                        <Badge className="border-yellow-500/25 bg-yellow-500/10 text-yellow-300">
+                          Grupo asignado
+                        </Badge>
+                      </div>
+
+                      <h3 className="text-2xl font-black text-white">
+                        {group.name}
+                      </h3>
+
+                      <p className="mt-2 text-sm capitalize text-zinc-400">
+                        Nivel:{" "}
+                        <span className="font-semibold text-yellow-300">
+                          {group.level || "Sin nivel"}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+                    <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4">
+                      <Calendar className="mb-3 h-5 w-5 text-yellow-400" />
+                      <p className="text-xs uppercase tracking-widest text-zinc-500">
+                        Días
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {group.days || "Por confirmar"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4">
+                      <Clock3 className="mb-3 h-5 w-5 text-yellow-400" />
+                      <p className="text-xs uppercase tracking-widest text-zinc-500">
+                        Horario
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {group.schedule || "Por confirmar"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4">
+                      <UserCheck className="mb-3 h-5 w-5 text-yellow-400" />
+                      <p className="text-xs uppercase tracking-widest text-zinc-500">
+                        Instructor
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {group.instructor || "Por confirmar"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Calendar className="mx-auto mb-4 h-10 w-10 text-yellow-400" />
+                <h3 className="text-lg font-bold text-white">
+                  Aún no tienes un grupo asignado
+                </h3>
+                <p className="mt-2 text-sm text-zinc-500">
+                  Cuando administración te asigne un grupo, aquí aparecerán tus
+                  clases semanales.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Eventos próximos</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Bootcamps, talleres, eventos especiales y actividades destacadas.
+            </p>
+          </div>
+
+          {featuredEvent && (
+            <EventCard
+              event={featuredEvent}
+              onOpen={setSelectedEvent}
+              featured
+            />
+          )}
+
+          {filteredEvents.length === 0 ? (
+            <Card>
+              <CardContent className="p-10 text-center">
+                <p className="text-zinc-500">
+                  No hay eventos disponibles por ahora.
+                </p>
+              </CardContent>
+            </Card>
+          ) : regularEvents.length > 0 ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {regularEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onOpen={setSelectedEvent}
+                />
+              ))}
+            </div>
+          ) : null}
+        </section>
       </div>
 
       <EventDetailModal
