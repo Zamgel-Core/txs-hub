@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   AlertTriangle,
-  BadgeCheck,
   Camera,
   CheckCircle2,
   Copy,
@@ -12,7 +11,7 @@ import {
   IdCard,
   Loader2,
   Lock,
-  Medal,
+  CalendarDays,
   Phone,
   Save,
   Shield,
@@ -60,13 +59,19 @@ function formatDate(date: string | null) {
 }
 
 function getMembershipStyle(status?: string | null) {
-  if (status === "activa") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
-  if (status === "pendiente") return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  if (status === "activa")
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  if (status === "pendiente")
+    return "border-amber-500/30 bg-amber-500/10 text-amber-300";
   return "border-red-500/30 bg-red-500/10 text-red-300";
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">{children}</label>;
+  return (
+    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+      {children}
+    </label>
+  );
 }
 
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
@@ -141,9 +146,13 @@ export function MiPerfil({ mode }: MiPerfilProps) {
     loadProfile();
   }, []);
 
-  const displayName = fullName || student?.full_name || baseProfile?.full_name || "Perfil TXS";
-  const avatarUrl = extended?.profile_photo_url || baseProfile?.avatar_url || null;
-  const qrValue = extended?.qr_code_value || `TXS-${mode.toUpperCase()}:${baseProfile?.id || "perfil"}`;
+  const displayName =
+    fullName || student?.full_name || baseProfile?.full_name || "Perfil TXS";
+  const avatarUrl =
+    extended?.profile_photo_url || baseProfile?.avatar_url || null;
+  const qrValue =
+    extended?.qr_code_value ||
+    `TXS-${mode.toUpperCase()}:${baseProfile?.id || "perfil"}`;
 
   const profileCompletion = useMemo(() => {
     if (!extended) return 0;
@@ -161,7 +170,9 @@ export function MiPerfil({ mode }: MiPerfilProps) {
       extended.medical_conditions,
     ];
 
-    const completed = values.filter((value) => String(value || "").trim().length > 0).length;
+    const completed = values.filter(
+      (value) => String(value || "").trim().length > 0,
+    ).length;
     return Math.round((completed / values.length) * 100);
   }, [extended, fullName, phone]);
 
@@ -175,17 +186,24 @@ export function MiPerfil({ mode }: MiPerfilProps) {
       setBaseProfile(bundle.baseProfile);
       setStudent(bundle.student);
       setExtended(bundle.extendedProfile);
-      setFullName(bundle.baseProfile?.full_name || bundle.student?.full_name || "");
+      setFullName(
+        bundle.baseProfile?.full_name || bundle.student?.full_name || "",
+      );
       setPhone(bundle.baseProfile?.phone || bundle.student?.phone || "");
     } catch (loadError) {
       console.error("Error cargando perfil:", loadError);
-      setError("No se pudo cargar tu perfil. Revisa la sesión o los permisos de Supabase.");
+      setError(
+        "No se pudo cargar tu perfil. Revisa la sesión o los permisos de Supabase.",
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  function updateExtended<K extends keyof ExtendedProfile>(key: K, value: ExtendedProfile[K]) {
+  function updateExtended<K extends keyof ExtendedProfile>(
+    key: K,
+    value: ExtendedProfile[K],
+  ) {
     setExtended((current) => {
       if (!current) return current;
       return { ...current, [key]: value };
@@ -211,7 +229,9 @@ export function MiPerfil({ mode }: MiPerfilProps) {
         ...extended,
         profile_id: baseProfile.id,
         student_id: student?.id || extended.student_id || null,
-        qr_code_value: extended.qr_code_value || `TXS-${mode.toUpperCase()}:${student?.id || baseProfile.id}`,
+        qr_code_value:
+          extended.qr_code_value ||
+          `TXS-${mode.toUpperCase()}:${student?.id || baseProfile.id}`,
       });
 
       setExtended(saved);
@@ -228,13 +248,17 @@ export function MiPerfil({ mode }: MiPerfilProps) {
       setSuccess("Perfil actualizado correctamente.");
     } catch (saveError) {
       console.error("Error guardando perfil:", saveError);
-      setError("No se pudo guardar el perfil. Revisa los permisos RLS o intenta nuevamente.");
+      setError(
+        "No se pudo guardar el perfil. Revisa los permisos RLS o intenta nuevamente.",
+      );
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleImageSelected(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageSelected(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
     const file = event.target.files?.[0];
     if (!file || !baseProfile?.id || !extended) return;
 
@@ -251,7 +275,9 @@ export function MiPerfil({ mode }: MiPerfilProps) {
     }
 
     if (file.size > MAX_IMAGE_SIZE) {
-      setImageWarning("La imagen pesa más de 1 MB. Comprímela antes de subirla para no saturar el almacenamiento.");
+      setImageWarning(
+        "La imagen pesa más de 1 MB. Comprímela antes de subirla para no saturar el almacenamiento.",
+      );
       event.target.value = "";
       return;
     }
@@ -259,7 +285,10 @@ export function MiPerfil({ mode }: MiPerfilProps) {
     try {
       setUploading(true);
 
-      const publicUrl = await uploadProfilePhoto({ profileId: baseProfile.id, file });
+      const publicUrl = await uploadProfilePhoto({
+        profileId: baseProfile.id,
+        file,
+      });
 
       const updatedExtended = {
         ...extended,
@@ -283,7 +312,9 @@ export function MiPerfil({ mode }: MiPerfilProps) {
       setSuccess("Foto de perfil actualizada.");
     } catch (uploadError) {
       console.error("Error subiendo foto:", uploadError);
-      setError("No se pudo subir la foto. Revisa el bucket profile-photos y sus policies.");
+      setError(
+        "No se pudo subir la foto. Revisa el bucket profile-photos y sus policies.",
+      );
     } finally {
       setUploading(false);
       event.target.value = "";
@@ -330,7 +361,11 @@ export function MiPerfil({ mode }: MiPerfilProps) {
               <div className="absolute inset-0 rounded-full bg-gold-500/20 blur-2xl" />
               <div className="relative h-36 w-36 overflow-hidden rounded-full border-2 border-gold-500/50 bg-zinc-900 shadow-[0_0_40px_rgba(212,175,55,0.2)]">
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gold-500 to-amber-700 text-4xl font-black text-black">
                     {getInitials(displayName)}
@@ -344,7 +379,11 @@ export function MiPerfil({ mode }: MiPerfilProps) {
                 className="absolute bottom-1 right-1 flex h-11 w-11 items-center justify-center rounded-full border border-gold-500/50 bg-black text-gold-400 shadow-xl transition hover:bg-gold-500 hover:text-black"
                 disabled={uploading}
               >
-                {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+                {uploading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Camera className="h-5 w-5" />
+                )}
               </button>
 
               <input
@@ -367,7 +406,9 @@ export function MiPerfil({ mode }: MiPerfilProps) {
               </h1>
 
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-                Información personal, datos médicos importantes, contacto de emergencia y credencial digital para futuras funciones de asistencia automática.
+                Información personal, datos médicos importantes, contacto de
+                emergencia y credencial digital para futuras funciones de
+                asistencia automática.
               </p>
 
               <div className="mt-4 flex flex-wrap justify-center gap-2 sm:justify-start">
@@ -376,7 +417,9 @@ export function MiPerfil({ mode }: MiPerfilProps) {
                 </span>
 
                 {student?.membership_status && (
-                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${getMembershipStyle(student.membership_status)}`}>
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${getMembershipStyle(student.membership_status)}`}
+                  >
                     Membresía {student.membership_status}
                   </span>
                 )}
@@ -395,7 +438,9 @@ export function MiPerfil({ mode }: MiPerfilProps) {
               </div>
 
               <div className="w-full min-w-0 text-center sm:text-left lg:text-center xl:text-left">
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold-400">Credencial digital</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold-400">
+                  Credencial digital
+                </p>
                 <p className="mt-2 break-all rounded-2xl border border-zinc-800 bg-zinc-950/80 p-3 text-xs text-zinc-300">
                   {qrValue}
                 </p>
@@ -449,10 +494,26 @@ export function MiPerfil({ mode }: MiPerfilProps) {
       )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <InfoCard icon={Medal} label="Nivel" value={`Nivel ${extended.level || 1}`} />
-        <InfoCard icon={BadgeCheck} label="Puntos" value={`${extended.points || 0} puntos`} />
-        <InfoCard icon={HeartPulse} label="Tipo de sangre" value={extended.blood_type || "Sin registrar"} />
-        <InfoCard icon={Phone} label="Emergencia" value={extended.emergency_contact_phone || "Sin registrar"} />
+        <InfoCard
+          icon={IdCard}
+          label="Perfil completado"
+          value={`${profileCompletion}%`}
+        />
+        <InfoCard
+          icon={HeartPulse}
+          label="Tipo de sangre"
+          value={extended.blood_type || "Sin registrar"}
+        />
+        <InfoCard
+          icon={Phone}
+          label="Emergencia"
+          value={extended.emergency_contact_phone || "Sin registrar"}
+        />
+        <InfoCard
+          icon={CalendarDays}
+          label="Vencimiento"
+          value={formatDate(student?.membership_end_date || null)}
+        />
       </div>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
@@ -462,35 +523,63 @@ export function MiPerfil({ mode }: MiPerfilProps) {
               <User className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white">Datos personales</h2>
-              <p className="text-sm text-zinc-500">Información básica de contacto.</p>
+              <h2 className="text-xl font-black text-white">
+                Datos personales
+              </h2>
+              <p className="text-sm text-zinc-500">
+                Información básica de contacto.
+              </p>
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <FieldLabel>Nombre completo</FieldLabel>
-              <TextInput value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Nombre completo" />
+              <TextInput
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                placeholder="Nombre completo"
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Teléfono</FieldLabel>
-              <TextInput value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Teléfono" />
+              <TextInput
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="Teléfono"
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Correo</FieldLabel>
-              <TextInput value={baseProfile?.email || student?.email || ""} disabled className="cursor-not-allowed opacity-70" />
+              <TextInput
+                value={baseProfile?.email || student?.email || ""}
+                disabled
+                className="cursor-not-allowed opacity-70"
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Fecha de nacimiento</FieldLabel>
-              <TextInput type="date" value={extended.birth_date || ""} onChange={(event) => updateExtended("birth_date", event.target.value || null)} />
+              <TextInput
+                type="date"
+                value={extended.birth_date || ""}
+                onChange={(event) =>
+                  updateExtended("birth_date", event.target.value || null)
+                }
+              />
             </div>
 
             <div className="space-y-2 md:col-span-2">
               <FieldLabel>Dirección</FieldLabel>
-              <TextInput value={extended.address || ""} onChange={(event) => updateExtended("address", event.target.value)} placeholder="Dirección completa" />
+              <TextInput
+                value={extended.address || ""}
+                onChange={(event) =>
+                  updateExtended("address", event.target.value)
+                }
+                placeholder="Dirección completa"
+              />
             </div>
           </div>
         </div>
@@ -502,23 +591,36 @@ export function MiPerfil({ mode }: MiPerfilProps) {
             </div>
             <div>
               <h2 className="text-xl font-black text-white">Información TXS</h2>
-              <p className="text-sm text-zinc-500">Datos internos para academia.</p>
+              <p className="text-sm text-zinc-500">
+                Datos internos para academia.
+              </p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="rounded-3xl border border-zinc-800 bg-black/30 p-4">
               <p className="text-xs text-zinc-500">ID de alumno</p>
-              <p className="mt-1 break-all text-sm font-semibold text-zinc-200">{student?.id || "No vinculado a students"}</p>
+              <p className="mt-1 break-all text-sm font-semibold text-zinc-200">
+                {student?.id || "No vinculado a students"}
+              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <InfoCard icon={Users} label="Nivel / grupo" value={student?.group_level || "Sin grupo"} />
-              <InfoCard icon={Lock} label="Vencimiento" value={formatDate(student?.membership_end_date || null)} />
+              <InfoCard
+                icon={Users}
+                label="Nivel / grupo"
+                value={student?.group_level || "Sin grupo"}
+              />
+              <InfoCard
+                icon={Lock}
+                label="Vencimiento"
+                value={formatDate(student?.membership_end_date || null)}
+              />
             </div>
 
             <div className="rounded-3xl border border-gold-500/20 bg-gold-500/10 p-4 text-sm leading-6 text-gold-100">
-              Este código podrá usarse más adelante para asistencia automática mediante escáner, lector QR o cámara del dispositivo.
+              Este código podrá usarse más adelante para asistencia automática
+              mediante escáner, lector QR o cámara del dispositivo.
             </div>
           </div>
         </div>
@@ -531,15 +633,24 @@ export function MiPerfil({ mode }: MiPerfilProps) {
               <HeartPulse className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white">Información médica</h2>
-              <p className="text-sm text-zinc-500">Útil ante lesiones, accidentes o emergencias.</p>
+              <h2 className="text-xl font-black text-white">
+                Información médica
+              </h2>
+              <p className="text-sm text-zinc-500">
+                Útil ante lesiones, accidentes o emergencias.
+              </p>
             </div>
           </div>
 
           <div className="grid gap-4">
             <div className="space-y-2">
               <FieldLabel>Tipo de sangre</FieldLabel>
-              <SelectInput value={extended.blood_type || ""} onChange={(event) => updateExtended("blood_type", event.target.value || null)}>
+              <SelectInput
+                value={extended.blood_type || ""}
+                onChange={(event) =>
+                  updateExtended("blood_type", event.target.value || null)
+                }
+              >
                 {bloodTypes.map((bloodType) => (
                   <option key={bloodType} value={bloodType}>
                     {bloodType || "Seleccionar"}
@@ -550,17 +661,35 @@ export function MiPerfil({ mode }: MiPerfilProps) {
 
             <div className="space-y-2">
               <FieldLabel>Alergias</FieldLabel>
-              <TextArea value={extended.allergies || ""} onChange={(event) => updateExtended("allergies", event.target.value)} placeholder="Ej. Penicilina, mariscos, látex..." />
+              <TextArea
+                value={extended.allergies || ""}
+                onChange={(event) =>
+                  updateExtended("allergies", event.target.value)
+                }
+                placeholder="Ej. Penicilina, mariscos, látex..."
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Medicamentos</FieldLabel>
-              <TextArea value={extended.medications || ""} onChange={(event) => updateExtended("medications", event.target.value)} placeholder="Medicamentos actuales o de uso importante" />
+              <TextArea
+                value={extended.medications || ""}
+                onChange={(event) =>
+                  updateExtended("medications", event.target.value)
+                }
+                placeholder="Medicamentos actuales o de uso importante"
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Condiciones médicas</FieldLabel>
-              <TextArea value={extended.medical_conditions || ""} onChange={(event) => updateExtended("medical_conditions", event.target.value)} placeholder="Lesiones, asma, presión, diabetes, etc." />
+              <TextArea
+                value={extended.medical_conditions || ""}
+                onChange={(event) =>
+                  updateExtended("medical_conditions", event.target.value)
+                }
+                placeholder="Lesiones, asma, presión, diabetes, etc."
+              />
             </div>
           </div>
         </div>
@@ -571,30 +700,61 @@ export function MiPerfil({ mode }: MiPerfilProps) {
               <Phone className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white">Contacto de emergencia</h2>
-              <p className="text-sm text-zinc-500">Persona a contactar si ocurre algo en clase.</p>
+              <h2 className="text-xl font-black text-white">
+                Contacto de emergencia
+              </h2>
+              <p className="text-sm text-zinc-500">
+                Persona a contactar si ocurre algo en clase.
+              </p>
             </div>
           </div>
 
           <div className="grid gap-4">
             <div className="space-y-2">
               <FieldLabel>Nombre del contacto</FieldLabel>
-              <TextInput value={extended.emergency_contact_name || ""} onChange={(event) => updateExtended("emergency_contact_name", event.target.value)} placeholder="Nombre completo" />
+              <TextInput
+                value={extended.emergency_contact_name || ""}
+                onChange={(event) =>
+                  updateExtended("emergency_contact_name", event.target.value)
+                }
+                placeholder="Nombre completo"
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Teléfono de emergencia</FieldLabel>
-              <TextInput value={extended.emergency_contact_phone || ""} onChange={(event) => updateExtended("emergency_contact_phone", event.target.value)} placeholder="Teléfono" />
+              <TextInput
+                value={extended.emergency_contact_phone || ""}
+                onChange={(event) =>
+                  updateExtended("emergency_contact_phone", event.target.value)
+                }
+                placeholder="Teléfono"
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Relación</FieldLabel>
-              <TextInput value={extended.emergency_contact_relationship || ""} onChange={(event) => updateExtended("emergency_contact_relationship", event.target.value)} placeholder="Mamá, papá, pareja, hermano..." />
+              <TextInput
+                value={extended.emergency_contact_relationship || ""}
+                onChange={(event) =>
+                  updateExtended(
+                    "emergency_contact_relationship",
+                    event.target.value,
+                  )
+                }
+                placeholder="Mamá, papá, pareja, hermano..."
+              />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Notas importantes</FieldLabel>
-              <TextArea value={extended.emergency_notes || ""} onChange={(event) => updateExtended("emergency_notes", event.target.value)} placeholder="Indicaciones especiales en caso de emergencia" />
+              <TextArea
+                value={extended.emergency_notes || ""}
+                onChange={(event) =>
+                  updateExtended("emergency_notes", event.target.value)
+                }
+                placeholder="Indicaciones especiales en caso de emergencia"
+              />
             </div>
           </div>
         </div>
@@ -606,26 +766,47 @@ export function MiPerfil({ mode }: MiPerfilProps) {
             <Users className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-xl font-black text-white">Privacidad futura</h2>
-            <p className="text-sm text-zinc-500">Preparado para perfiles públicos, amigos, niveles y puntos.</p>
+            <h2 className="text-xl font-black text-white">
+              Privacidad y funciones futuras
+            </h2>
+            <p className="text-sm text-zinc-500">
+              Dejamos preparada la base para perfil público, amigos, puntos y
+              reconocimiento por clase.
+            </p>
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <label className="flex cursor-pointer items-center justify-between gap-3 rounded-3xl border border-zinc-800 bg-black/30 p-4 text-sm text-zinc-300">
-            Mostrar foto
-            <input type="checkbox" checked={extended.public_show_photo} onChange={(event) => updateExtended("public_show_photo", event.target.checked)} />
+            <span>
+              <span className="block font-semibold text-zinc-100">
+                Mostrar foto en perfil público
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-zinc-500">
+                Cuando activemos perfiles públicos o amigos, esta opción
+                controlará si tu foto puede mostrarse.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={extended.public_show_photo}
+              onChange={(event) =>
+                updateExtended("public_show_photo", event.target.checked)
+              }
+            />
           </label>
 
-          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-3xl border border-zinc-800 bg-black/30 p-4 text-sm text-zinc-300">
-            Mostrar nivel
-            <input type="checkbox" checked={extended.public_show_level} onChange={(event) => updateExtended("public_show_level", event.target.checked)} />
-          </label>
-
-          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-3xl border border-zinc-800 bg-black/30 p-4 text-sm text-zinc-300">
-            Mostrar puntos
-            <input type="checkbox" checked={extended.public_show_points} onChange={(event) => updateExtended("public_show_points", event.target.checked)} />
-          </label>
+          <div className="rounded-3xl border border-gold-500/20 bg-gold-500/10 p-4 text-sm leading-6 text-gold-100">
+            <p className="font-bold text-gold-300">
+              Sistema de progreso pendiente
+            </p>
+            <p className="mt-1">
+              Los niveles y puntos se definirán con el cliente. La idea queda
+              enfocada en asistencia, desempeño en clase, puntos otorgados por
+              maestro/admin y mensajes de motivación, no necesariamente en
+              categorías como principiante o intermedio.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -636,7 +817,11 @@ export function MiPerfil({ mode }: MiPerfilProps) {
           disabled={saving}
           className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-gold-500 to-amber-500 px-6 py-3 text-sm font-black text-black shadow-[0_0_35px_rgba(212,175,55,0.28)] transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
+          {saving ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <Save className="h-5 w-5" />
+          )}
           Guardar perfil
         </button>
       </div>

@@ -25,14 +25,33 @@ import {
 
 type Student = NonNullable<StudentPaymentPortalData["student"]>;
 
-function formatDate(date: string | null) {
-  if (!date) return "Pendiente";
+function parseLocalDate(date: string | null) {
+  if (!date) return null;
 
-  return new Date(date).toLocaleDateString("es-MX", {
+  const cleanDate = String(date).trim();
+  if (!cleanDate) return null;
+
+  const [year, month, day] = cleanDate.split("T")[0].split("-").map(Number);
+
+  if (!year || !month || !day) return null;
+
+  const parsedDate = new Date(year, month - 1, day);
+
+  if (Number.isNaN(parsedDate.getTime())) return null;
+
+  return parsedDate;
+}
+
+function formatDate(date: string | null) {
+  const parsedDate = parseLocalDate(date);
+
+  if (!parsedDate) return "Pendiente";
+
+  return new Intl.DateTimeFormat("es-MX", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
+  }).format(parsedDate);
 }
 
 function formatMoney(amount: number) {

@@ -32,7 +32,33 @@ import {
   PaymentStudent,
 } from "@/src/services/paymentsService";
 
-const today = new Date().toISOString().slice(0, 10);
+function getTodayLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDate(date: string | null) {
+  if (!date) return null;
+
+  const cleanDate = String(date).trim();
+  if (!cleanDate) return null;
+
+  const [year, month, day] = cleanDate.split("T")[0].split("-").map(Number);
+
+  if (!year || !month || !day) return null;
+
+  const parsedDate = new Date(year, month - 1, day);
+
+  if (Number.isNaN(parsedDate.getTime())) return null;
+
+  return parsedDate;
+}
+
+const today = getTodayLocalDateString();
 
 const membershipPrices: Record<MembershipType, number> = {
   semanal: 150,
@@ -49,13 +75,15 @@ const emptyPaymentForm = {
 };
 
 function formatDate(date: string | null) {
-  if (!date) return "Sin fecha";
+  const parsedDate = parseLocalDate(date);
 
-  return new Date(date).toLocaleDateString("es-MX", {
+  if (!parsedDate) return "Sin fecha";
+
+  return new Intl.DateTimeFormat("es-MX", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
+  }).format(parsedDate);
 }
 
 function formatMoney(amount: number) {
@@ -66,13 +94,13 @@ function formatMoney(amount: number) {
 }
 
 function getDaysRemaining(date: string | null) {
-  if (!date) return null;
+  const endDate = parseLocalDate(date);
 
-  const currentDate = new Date();
-  currentDate.setHours(0, 0, 0, 0);
+  if (!endDate) return null;
 
-  const endDate = new Date(date);
-  endDate.setHours(0, 0, 0, 0);
+  const currentDate = parseLocalDate(today);
+
+  if (!currentDate) return null;
 
   return Math.ceil(
     (endDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24),
@@ -84,8 +112,10 @@ function isToday(date: string) {
 }
 
 function isSameMonth(date: string) {
-  const currentDate = new Date();
-  const targetDate = new Date(date);
+  const currentDate = parseLocalDate(today);
+  const targetDate = parseLocalDate(date);
+
+  if (!currentDate || !targetDate) return false;
 
   return (
     currentDate.getMonth() === targetDate.getMonth() &&
@@ -313,8 +343,8 @@ export function Pagos() {
     })
     .sort((a, b) => {
       return (
-        new Date(a.membership_end_date || "").getTime() -
-        new Date(b.membership_end_date || "").getTime()
+        (parseLocalDate(a.membership_end_date)?.getTime() || 0) -
+        (parseLocalDate(b.membership_end_date)?.getTime() || 0)
       );
     })
     .slice(0, 5);
