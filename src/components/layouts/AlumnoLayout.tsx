@@ -7,6 +7,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  UserCircle,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -167,6 +168,7 @@ export function AlumnoLayout() {
 
   const navItems = [
     { name: "Mi Portal", path: "/alumno", icon: LayoutDashboard },
+    { name: "Mi Perfil", path: "/alumno/perfil", icon: UserCircle },
     {
       name: "Avisos",
       path: "/alumno/avisos",
@@ -318,9 +320,13 @@ export function AlumnoLayout() {
                   <div className="text-xs text-zinc-500">Alumno TXS</div>
                 </div>
 
-                <div className="w-10 h-10 md:w-9 md:h-9 rounded-full border border-gold-500/40 bg-gold-500 text-black flex items-center justify-center font-bold text-sm">
+                <Link
+                  to="/alumno/perfil"
+                  className="w-10 h-10 md:w-9 md:h-9 rounded-full border border-gold-500/40 bg-gold-500 text-black flex items-center justify-center font-bold text-sm transition hover:scale-105 hover:shadow-[0_0_20px_rgba(212,175,55,0.35)]"
+                  title="Mi Perfil"
+                >
                   {initials}
-                </div>
+                </Link>
               </div>
 
               <button

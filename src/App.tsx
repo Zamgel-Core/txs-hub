@@ -36,6 +36,8 @@ import { EventosPublicos } from "@/src/pages/public/EventosPublicos";
 import { Producciones } from "@/src/pages/public/Producciones";
 import { Palapa } from "@/src/pages/public/Palapa";
 
+import { MiPerfil } from "@/src/pages/shared/MiPerfil";
+
 import { NotFound } from "@/src/pages/NotFound";
 
 export default function App() {
@@ -76,6 +78,7 @@ export default function App() {
           <Route path="eventos" element={<Eventos />} />
           <Route path="reportes" element={<Reportes />} />
           <Route path="configuracion" element={<Configuracion />} />
+          <Route path="perfil" element={<MiPerfil mode="admin" />} />
         </Route>
 
         <Route
@@ -91,6 +94,7 @@ export default function App() {
           <Route path="eventos" element={<AlumnoEventos />} />
           <Route path="pagos" element={<AlumnoPagos />} />
           <Route path="soporte" element={<AlumnoSoporte />} />
+          <Route path="perfil" element={<MiPerfil mode="alumno" />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

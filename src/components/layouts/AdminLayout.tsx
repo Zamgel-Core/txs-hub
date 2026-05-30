@@ -12,6 +12,7 @@ import {
   Megaphone,
   Menu,
   Settings,
+  UserCircle,
   Users,
   X,
 } from "lucide-react";
@@ -30,6 +31,7 @@ export function AdminLayout() {
 
   const navItems = [
     { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
+    { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
     { name: "Alumnos", path: "/admin/alumnos", icon: Users },
     { name: "Grupos", path: "/admin/grupos", icon: Users },
     { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
@@ -81,7 +83,10 @@ export function AdminLayout() {
         <div className="flex-1 overflow-y-auto py-6">
           <nav className="space-y-2 px-4">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
+              const isActive =
+                item.path === "/admin"
+                  ? location.pathname === "/admin"
+                  : location.pathname.startsWith(item.path);
 
               return (
                 <Link
@@ -144,9 +149,13 @@ export function AdminLayout() {
                 Admin TXS
               </span>
 
-              <div className="w-10 h-10 md:w-8 md:h-8 rounded-full bg-gold-500/20 border border-gold-500/50 flex items-center justify-center text-gold-500 font-bold">
+              <Link
+                to="/admin/perfil"
+                className="w-10 h-10 md:w-8 md:h-8 rounded-full bg-gold-500/20 border border-gold-500/50 flex items-center justify-center text-gold-500 font-bold transition hover:scale-105 hover:bg-gold-500 hover:text-black"
+                title="Mi Perfil"
+              >
                 A
-              </div>
+              </Link>
             </div>
           </div>
         </header>
