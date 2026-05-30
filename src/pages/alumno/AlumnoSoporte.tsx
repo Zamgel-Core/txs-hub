@@ -1,4 +1,4 @@
-// 📍 Ruta del archivo: src/pages/alumno/AlumnoSoporte.tsx
+// 📍 Ruta: src/pages/alumno/AlumnoSoporte.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -7,6 +7,7 @@ import {
   HelpCircle,
   Loader2,
   Mail,
+  MessageCircle,
   MessageSquare,
   Send,
 } from "lucide-react";
@@ -43,6 +44,8 @@ type MessageReply = {
   created_at: string;
 };
 
+const WHATSAPP_NUMBER = "528991019210";
+
 const categoryOptions = [
   { value: "ayuda", label: "Ayuda general" },
   { value: "pago", label: "Pago" },
@@ -71,6 +74,26 @@ function getStatusClass(status: MessageItem["status"]) {
   }
 
   return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+}
+
+function buildWhatsappUrl(student: Student | null) {
+  const message = `Hola TXS Academy.
+
+Soy ${student?.full_name ?? "un alumno"} del portal TXS HUB y necesito apoyo.
+
+Correo registrado: ${student?.email ?? "Sin especificar"}
+
+Mi duda es sobre:
+- Horarios
+- Eventos
+- Membresía
+- Clases
+- Información general
+
+Mensaje:
+`;
+
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
 export function AlumnoSoporte() {
@@ -161,6 +184,8 @@ export function AlumnoSoporte() {
 
         setReplies(groupedReplies);
       }
+    } else {
+      setReplies({});
     }
 
     setLoading(false);
@@ -245,11 +270,15 @@ export function AlumnoSoporte() {
     return messages.filter((item) => item.status === "pendiente").length;
   }, [messages]);
 
+  const whatsappUrl = useMemo(() => {
+    return buildWhatsappUrl(student);
+  }, [student]);
+
   if (loading) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-zinc-500">
         <Loader2 className="w-8 h-8 animate-spin text-gold-500 mb-4" />
-        Cargando soporte...
+        Cargando centro de ayuda...
       </div>
     );
   }
@@ -259,11 +288,12 @@ export function AlumnoSoporte() {
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
         <div>
           <h1 className="text-3xl sm:text-4xl font-black text-white">
-            Soporte TXS
+            Centro de Ayuda
           </h1>
 
           <p className="text-zinc-500 mt-2">
-            Envía solicitudes internas a administración y revisa tus mensajes.
+            Contacta a TXS Academy por WhatsApp o envía solicitudes internas a
+            administración.
           </p>
         </div>
 
@@ -294,6 +324,50 @@ export function AlumnoSoporte() {
         </div>
       </div>
 
+      <div className="rounded-3xl border border-green-500/20 bg-gradient-to-r from-green-500/10 via-green-500/5 to-transparent p-5 sm:p-6 shadow-[0_0_35px_rgba(34,197,94,0.05)]">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-green-500/20 bg-green-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-green-400">
+              <MessageCircle className="w-4 h-4" />
+              WhatsApp TXS Academy
+            </div>
+
+            <h2 className="mt-3 text-2xl sm:text-3xl font-black text-white">
+              ¿Necesitas ayuda rápida?
+            </h2>
+
+            <p className="mt-2 text-sm sm:text-base text-zinc-400 leading-relaxed">
+              Para dudas rápidas sobre horarios, eventos, clases, ubicación,
+              membresías o información general, puedes comunicarte directo por
+              WhatsApp.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {["Horarios", "Eventos", "Clases", "Membresías", "Ubicación"].map(
+                (item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-zinc-700/80 bg-black/30 px-3 py-1 text-xs font-semibold text-zinc-300"
+                  >
+                    {item}
+                  </span>
+                ),
+              )}
+            </div>
+          </div>
+
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-green-500 px-6 font-bold text-black transition hover:bg-green-400 hover:shadow-[0_0_25px_rgba(34,197,94,0.25)]"
+          >
+            <MessageCircle className="w-5 h-5" />
+            Abrir WhatsApp
+          </a>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
         <div className="rounded-3xl border border-gold-500/20 bg-[#090909] overflow-hidden">
           <div className="p-5 border-b border-zinc-900">
@@ -303,10 +377,12 @@ export function AlumnoSoporte() {
               </div>
 
               <div>
-                <h2 className="text-xl font-bold text-white">Nuevo mensaje</h2>
+                <h2 className="text-xl font-bold text-white">
+                  Mensaje interno
+                </h2>
 
                 <p className="text-sm text-zinc-500">
-                  Escribe a administración.
+                  Crea una solicitud formal para administración.
                 </p>
               </div>
             </div>
@@ -377,7 +453,7 @@ export function AlumnoSoporte() {
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  Enviar mensaje
+                  Enviar mensaje interno
                 </>
               )}
             </button>
@@ -390,7 +466,7 @@ export function AlumnoSoporte() {
               <h2 className="text-xl font-bold text-white">Mis solicitudes</h2>
 
               <p className="text-sm text-zinc-500">
-                Historial de mensajes enviados.
+                Historial de mensajes internos enviados.
               </p>
             </div>
 
@@ -400,7 +476,7 @@ export function AlumnoSoporte() {
           <div className="divide-y divide-zinc-900">
             {messages.length === 0 ? (
               <div className="p-10 text-center text-zinc-500">
-                No has enviado mensajes todavía.
+                No has enviado mensajes internos todavía.
               </div>
             ) : (
               messages.map((item) => (

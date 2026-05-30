@@ -29,6 +29,9 @@ import { AlumnoPagos } from "@/src/pages/alumno/AlumnoPagos";
 import { AlumnoSoporte } from "@/src/pages/alumno/AlumnoSoporte";
 import { AlumnoAvisos } from "@/src/pages/alumno/AlumnoAvisos";
 
+import { Academia } from "@/src/pages/public/Academia";
+import { AcademiaInscripcion } from "@/src/pages/public/AcademiaInscripcion";
+
 import { NotFound } from "@/src/pages/NotFound";
 
 export default function App() {
@@ -37,6 +40,13 @@ export default function App() {
       <Routes>
         <Route element={<PublicLayout />}>
           <Route path="/" element={<Landing />} />
+          <Route path="/academia" element={<Academia />} />
+
+          <Route
+            path="/academia/inscripcion"
+            element={<AcademiaInscripcion />}
+          />
+
           <Route path="/terminos" element={<Terminos />} />
           <Route path="/privacidad" element={<Privacidad />} />
           <Route path="/reglamento" element={<Reglamento />} />

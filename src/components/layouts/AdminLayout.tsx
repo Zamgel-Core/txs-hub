@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { Button } from "../ui/Button";
+import { PoweredByZamgel } from "@/src/components/common/PoweredByZamgel";
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -150,9 +151,22 @@ export function AdminLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 text-zinc-100">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 text-zinc-100 flex flex-col">
+          <div className="max-w-7xl mx-auto w-full flex-1">
             <Outlet />
+          </div>
+
+          <div className="mt-10 pt-6 border-t border-zinc-800/60 text-center">
+            <div className="inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-orange-400 transition-colors">
+              <img
+                src="/branding/zamgelcore-zc-logo.png"
+                alt="Zamgel Core"
+                className="h-5 w-auto opacity-70"
+              />
+              <span>
+                Powered by <span className="font-semibold">Zamgel Core</span>
+              </span>
+            </div>
           </div>
         </main>
       </div>
