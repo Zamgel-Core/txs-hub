@@ -68,16 +68,19 @@ const gallery = [
 const demoVideos = [
   {
     src: "/academia/instructor.mp4",
+    poster: "/academia/poster-instructor.jpg",
     title: "Instructor TXS",
     description: "Técnica y estilo en pista.",
   },
   {
     src: "/academia/alumno_demostracion.mp4",
+    poster: "/academia/poster-alumno.jpg",
     title: "Alumno en práctica",
     description: "Progreso real dentro de clase.",
   },
   {
     src: "/academia/maestro_demostracion.mp4",
+    poster: "/academia/poster-maestro.jpg",
     title: "Demostración maestro",
     description: "Guía, ritmo y precisión.",
   },
@@ -118,13 +121,22 @@ export function Academia() {
     <div className="bg-txs-black text-white">
       <section className="relative flex min-h-[92vh] items-center overflow-hidden pt-28">
         <div className="absolute inset-0">
+          <img
+            src="/academia/1.jpeg"
+            alt="TXS Academia"
+            className="h-full w-full object-cover opacity-45 md:hidden"
+            fetchPriority="high"
+          />
+
           <video
             src="/academia/instructor.mp4"
+            poster="/academia/1.jpeg"
             autoPlay
             muted
             loop
             playsInline
-            className="h-full w-full object-cover opacity-45"
+            preload="metadata"
+            className="hidden h-full w-full object-cover opacity-45 md:block"
           />
 
           <div className="absolute inset-0 bg-gradient-to-r from-black via-black/85 to-black/25" />
@@ -199,13 +211,11 @@ export function Academia() {
               className="relative hidden lg:block"
             >
               <div className="relative mx-auto aspect-[9/16] max-h-[620px] w-full max-w-[330px] overflow-hidden rounded-[2rem] border border-gold-500/30 bg-black shadow-2xl shadow-gold-500/10">
-                <video
-                  src="/academia/instructor.mp4"
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
+                <img
+                  src="/academia/1.jpeg"
+                  alt="Instructor TXS"
                   className="h-full w-full object-cover"
+                  loading="lazy"
                 />
 
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/60 to-transparent p-6">
@@ -332,6 +342,7 @@ export function Academia() {
               <div className="aspect-[9/16] bg-black">
                 <video
                   src={video.src}
+                  poster={video.poster}
                   controls
                   playsInline
                   preload="metadata"
@@ -420,8 +431,10 @@ export function Academia() {
           <div className="relative mx-auto aspect-[9/16] w-full max-w-[360px] overflow-hidden rounded-[2rem] border border-gold-500/25 bg-zinc-950 shadow-2xl shadow-gold-500/10">
             <video
               src="/academia/instructor.mp4"
+              poster="/academia/1.jpeg"
               controls
               playsInline
+              preload="metadata"
               className="h-full w-full object-cover"
             />
           </div>

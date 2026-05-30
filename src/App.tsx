@@ -5,6 +5,7 @@ import { PublicLayout } from "@/src/components/layouts/PublicLayout";
 import { AdminLayout } from "@/src/components/layouts/AdminLayout";
 import { AlumnoLayout } from "@/src/components/layouts/AlumnoLayout";
 import { ProtectedRoute } from "@/src/components/auth/ProtectedRoute";
+import { ScrollToTop } from "@/src/components/common/ScrollToTop";
 
 import { Landing } from "@/src/pages/public/Landing";
 import { Terminos } from "@/src/pages/public/Terminos";
@@ -31,22 +32,25 @@ import { AlumnoAvisos } from "@/src/pages/alumno/AlumnoAvisos";
 
 import { Academia } from "@/src/pages/public/Academia";
 import { AcademiaInscripcion } from "@/src/pages/public/AcademiaInscripcion";
+import { EventosPublicos } from "@/src/pages/public/EventosPublicos";
+import { Producciones } from "@/src/pages/public/Producciones";
+import { Palapa } from "@/src/pages/public/Palapa";
 
 import { NotFound } from "@/src/pages/NotFound";
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
+
       <Routes>
         <Route element={<PublicLayout />}>
           <Route path="/" element={<Landing />} />
           <Route path="/academia" element={<Academia />} />
-
-          <Route
-            path="/academia/inscripcion"
-            element={<AcademiaInscripcion />}
-          />
-
+          <Route path="/academia/inscripcion" element={<AcademiaInscripcion />} />
+          <Route path="/eventos" element={<EventosPublicos />} />
+          <Route path="/producciones" element={<Producciones />} />
+          <Route path="/palapa" element={<Palapa />} />
           <Route path="/terminos" element={<Terminos />} />
           <Route path="/privacidad" element={<Privacidad />} />
           <Route path="/reglamento" element={<Reglamento />} />

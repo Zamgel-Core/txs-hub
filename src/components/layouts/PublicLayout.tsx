@@ -10,9 +10,9 @@ import { PoweredByZamgel } from "@/src/components/common/PoweredByZamgel";
 const navItems = [
   { label: "Inicio", path: "/" },
   { label: "Academia", path: "/academia" },
-  { label: "Producciones", path: "/" },
-  { label: "Palapa", path: "/" },
-  { label: "Eventos", path: "/" },
+  { label: "Producciones", path: "/producciones" },
+  { label: "Palapa", path: "/palapa" },
+  { label: "Eventos", path: "/eventos" },
 ];
 
 export function PublicLayout() {
@@ -26,7 +26,7 @@ export function PublicLayout() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col font-sans relative">
+    <div className="min-h-screen flex flex-col font-sans relative bg-txs-black">
       <header
         className={`fixed top-0 inset-x-0 z-50 w-full border-b transition-all duration-500 ${
           scrolled
@@ -93,14 +93,12 @@ export function PublicLayout() {
           </div>
 
           <button
+            type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden p-2 text-zinc-300 hover:text-gold-400 bg-txs-card/80 rounded-lg border border-zinc-800/80"
+            aria-label="Abrir menú"
           >
-            {isMobileMenuOpen ? (
-              <X className="w-6 h-6" />
-            ) : (
-              <Menu className="w-6 h-6" />
-            )}
+            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
       </header>
@@ -142,19 +140,13 @@ export function PublicLayout() {
 
               <div className="flex flex-col gap-4 mt-auto">
                 <Link to="/login" onClick={() => setIsMobileMenuOpen(false)}>
-                  <Button
-                    variant="ghost"
-                    className="w-full py-6 uppercase tracking-widest"
-                  >
+                  <Button variant="ghost" className="w-full py-6 uppercase tracking-widest">
                     Iniciar sesión
                   </Button>
                 </Link>
 
                 <Link to="/login" onClick={() => setIsMobileMenuOpen(false)}>
-                  <Button
-                    variant="gold"
-                    className="w-full py-6 uppercase tracking-widest"
-                  >
+                  <Button variant="gold" className="w-full py-6 uppercase tracking-widest">
                     Registrarse
                   </Button>
                 </Link>
@@ -171,94 +163,47 @@ export function PublicLayout() {
       <footer className="relative border-t border-zinc-800/80 bg-txs-card py-16 md:py-24 overflow-hidden">
         <div className="container mx-auto max-w-7xl px-4 grid grid-cols-1 md:grid-cols-4 gap-12 relative z-10">
           <div className="space-y-6">
-            <img
-              src="/branding/logo_TSX.png"
-              alt="TXS Logo Footer"
-              className="h-12 w-auto"
-            />
+            <img src="/branding/logo_TSX.png" alt="TXS Logo Footer" className="h-12 w-auto" />
             <p className="text-sm text-zinc-400 leading-relaxed font-light">
-              El centro de control premium para alumnos, pagos, eventos y
-              experiencias exclusivas de Texano Show.
+              El centro de control premium para alumnos, pagos, eventos y experiencias exclusivas de Texano Show.
             </p>
           </div>
 
           <div>
-            <h4 className="font-display font-semibold text-zinc-100 mb-6">
-              Experiencias
-            </h4>
+            <h4 className="font-display font-semibold text-zinc-100 mb-6">Experiencias</h4>
             <ul className="space-y-3 text-sm text-zinc-400">
-              <li>
-                <Link to="/academia" className="hover:text-gold-400">
-                  Academia
-                </Link>
-              </li>
-              <li>
-                <Link to="/" className="hover:text-gold-400">
-                  Producciones
-                </Link>
-              </li>
-              <li>
-                <Link to="/" className="hover:text-gold-400">
-                  Palapa Tecolotes
-                </Link>
-              </li>
-              <li>
-                <Link to="/" className="hover:text-gold-400">
-                  Eventos Privados
-                </Link>
-              </li>
+              <li><Link to="/academia" className="hover:text-gold-400">Academia</Link></li>
+              <li><Link to="/producciones" className="hover:text-gold-400">Producciones</Link></li>
+              <li><Link to="/palapa" className="hover:text-gold-400">Palapa Tecolotes</Link></li>
+              <li><Link to="/eventos" className="hover:text-gold-400">Eventos</Link></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="font-display font-semibold text-zinc-100 mb-6">
-              Legal
-            </h4>
+            <h4 className="font-display font-semibold text-zinc-100 mb-6">Legal</h4>
             <ul className="space-y-3 text-sm text-zinc-400">
-              <li>
-                <Link to="/terminos" className="hover:text-gold-400">
-                  Términos y Condiciones
-                </Link>
-              </li>
-              <li>
-                <Link to="/privacidad" className="hover:text-gold-400">
-                  Aviso de Privacidad
-                </Link>
-              </li>
-              <li>
-                <Link to="/reglamento" className="hover:text-gold-400">
-                  Reglamento interno
-                </Link>
-              </li>
+              <li><Link to="/terminos" className="hover:text-gold-400">Términos y Condiciones</Link></li>
+              <li><Link to="/privacidad" className="hover:text-gold-400">Aviso de Privacidad</Link></li>
+              <li><Link to="/reglamento" className="hover:text-gold-400">Reglamento interno</Link></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="font-display font-semibold text-zinc-100 mb-6">
-              Contacto
-            </h4>
+            <h4 className="font-display font-semibold text-zinc-100 mb-6">Contacto</h4>
             <ul className="space-y-4 text-sm text-zinc-400">
               <li className="flex items-start gap-3">
                 <MapPin className="w-4 h-4 text-gold-500 mt-1" />
                 Reynosa, Tamps
               </li>
               <li>
-                <a
-                  href="mailto:txshub@gmail.com"
-                  className="hover:text-gold-400"
-                >
-                  txshub@gmail.com
-                </a>
+                <a href="mailto:txshub@gmail.com" className="hover:text-gold-400">txshub@gmail.com</a>
               </li>
             </ul>
           </div>
         </div>
 
         <div className="container mx-auto max-w-7xl px-4 mt-16 pt-8 border-t border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-zinc-500">
-          <p>
-            © {new Date().getFullYear()} Texano Show. Todos los derechos
-            reservados.
-          </p>
+          <p>© {new Date().getFullYear()} Texano Show. Todos los derechos reservados.</p>
           <PoweredByZamgel />
         </div>
       </footer>
