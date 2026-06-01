@@ -31,6 +31,12 @@ import {
   PaymentRecord,
   PaymentStudent,
 } from "@/src/services/paymentsService";
+import {
+  getMembershipPlans,
+  formatPlanDuration,
+  formatClassesPerDay,
+  type MembershipPlan,
+} from "@/src/services/membershipPlansService";
 
 function getTodayLocalDateString() {
   const now = new Date();
@@ -58,19 +64,97 @@ function parseLocalDate(date: string | null) {
   return parsedDate;
 }
 
+function toLocalDateString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+
+  return nextDate;
+}
+
+function addMonths(date: Date, months: number) {
+  const nextDate = new Date(date);
+  nextDate.setMonth(nextDate.getMonth() + months);
+
+  return nextDate;
+}
+
+function getUpcomingSunday(date: Date) {
+  const day = date.getDay();
+  const daysUntilSunday = day === 0 ? 0 : 7 - day;
+
+  return addDays(date, daysUntilSunday);
+}
+
+function getPreviousSunday(date: Date) {
+  const day = date.getDay();
+
+  return addDays(date, -day);
+}
+
+function getSuggestedMembershipEndDate(
+  startDateValue: string,
+  plan?: MembershipPlan | null,
+) {
+  const startDate = parseLocalDate(startDateValue);
+
+  if (!startDate || !plan) return startDateValue || today;
+
+  if (plan.duration_unit === "weeks") {
+    const firstSunday = getUpcomingSunday(startDate);
+    const extraWeeks = Math.max(Number(plan.duration_count || 1) - 1, 0);
+
+    return toLocalDateString(addDays(firstSunday, extraWeeks * 7));
+  }
+
+  if (plan.duration_unit === "days") {
+    const targetDate = addDays(startDate, Math.max(Number(plan.duration_count || 1) - 1, 0));
+    const sunday = getPreviousSunday(targetDate);
+
+    if (sunday.getTime() < startDate.getTime()) {
+      return toLocalDateString(getUpcomingSunday(startDate));
+    }
+
+    return toLocalDateString(sunday);
+  }
+
+  const targetDate = addMonths(startDate, Math.max(Number(plan.duration_count || 1), 1));
+  const sunday = getPreviousSunday(targetDate);
+
+  if (sunday.getTime() < startDate.getTime()) {
+    return toLocalDateString(getUpcomingSunday(startDate));
+  }
+
+  return toLocalDateString(sunday);
+}
+
+function getSuggestedMembershipStartDate(student?: PaymentStudent | null) {
+  const currentEndDate = parseLocalDate(student?.membership_end_date || null);
+  const currentDate = parseLocalDate(today);
+
+  if (currentEndDate && currentDate && currentEndDate.getTime() >= currentDate.getTime()) {
+    return toLocalDateString(addDays(currentEndDate, 1));
+  }
+
+  return today;
+}
+
 const today = getTodayLocalDateString();
 
-const membershipPrices: Record<MembershipType, number> = {
-  semanal: 150,
-  quincenal: 280,
-  mensual: 500,
-};
-
 const emptyPaymentForm = {
-  membershipType: "mensual" as MembershipType,
+  membershipType: "" as MembershipType,
   method: "efectivo" as PaymentMethod,
-  amount: String(membershipPrices.mensual),
+  amount: "",
   paymentDate: today,
+  membershipStartDate: today,
+  membershipEndDate: today,
   notes: "",
 };
 
@@ -181,6 +265,7 @@ function getStudentPaymentMeta(student: PaymentStudent) {
 export function Pagos() {
   const [students, setStudents] = useState<PaymentStudent[]>([]);
   const [recentPayments, setRecentPayments] = useState<PaymentRecord[]>([]);
+  const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<PaymentStudent | null>(
     null,
   );
@@ -230,10 +315,14 @@ export function Pagos() {
   async function loadPaymentData() {
     try {
       setLoading(true);
-      const data = await getPaymentsAdminData();
+      const [data, plans] = await Promise.all([
+        getPaymentsAdminData(),
+        getMembershipPlans(false),
+      ]);
 
       setStudents(data.students);
       setRecentPayments(data.recentPayments);
+      setMembershipPlans(plans);
     } catch (error) {
       console.error("Error cargando pagos:", error);
       alert("No se pudieron cargar los pagos.");
@@ -242,23 +331,61 @@ export function Pagos() {
     }
   }
 
+  function getDefaultPlan(student?: PaymentStudent | null) {
+    if (student?.membership_type) {
+      const currentPlan = membershipPlans.find(
+        (plan) => plan.slug === student.membership_type && plan.is_active,
+      );
+
+      if (currentPlan) return currentPlan;
+    }
+
+    return membershipPlans[0] || null;
+  }
+
   function openPaymentModal(student: PaymentStudent) {
-    const membershipType = student.membership_type || "mensual";
+    const defaultPlan = getDefaultPlan(student);
+    const suggestedStartDate = getSuggestedMembershipStartDate(student);
+    const suggestedEndDate = getSuggestedMembershipEndDate(
+      suggestedStartDate,
+      defaultPlan,
+    );
 
     setSelectedStudent(student);
     setPaymentForm({
       ...emptyPaymentForm,
-      membershipType,
-      amount: String(membershipPrices[membershipType]),
+      membershipType: defaultPlan?.slug || "",
+      amount: defaultPlan ? String(defaultPlan.price) : "",
+      membershipStartDate: suggestedStartDate,
+      membershipEndDate: suggestedEndDate,
     });
     setIsModalOpen(true);
   }
 
   function handleMembershipTypeChange(membershipType: MembershipType) {
+    const selectedPlan = membershipPlans.find((plan) => plan.slug === membershipType);
+    const suggestedEndDate = getSuggestedMembershipEndDate(
+      paymentForm.membershipStartDate,
+      selectedPlan,
+    );
+
     setPaymentForm({
       ...paymentForm,
       membershipType,
-      amount: String(membershipPrices[membershipType]),
+      amount: selectedPlan ? String(selectedPlan.price) : paymentForm.amount,
+      membershipEndDate: suggestedEndDate,
+    });
+  }
+
+  function handleMembershipStartDateChange(membershipStartDate: string) {
+    const selectedPlan = membershipPlans.find(
+      (plan) => plan.slug === paymentForm.membershipType,
+    );
+
+    setPaymentForm({
+      ...paymentForm,
+      membershipStartDate,
+      membershipEndDate: getSuggestedMembershipEndDate(membershipStartDate, selectedPlan),
     });
   }
 
@@ -267,8 +394,36 @@ export function Pagos() {
 
     const amount = Number(paymentForm.amount);
 
+    if (!paymentForm.membershipType) {
+      alert("Selecciona un plan de membresía.");
+      return;
+    }
+
     if (!amount || amount <= 0) {
       alert("Ingresa un monto válido.");
+      return;
+    }
+
+    if (!paymentForm.paymentDate) {
+      alert("Selecciona la fecha de pago.");
+      return;
+    }
+
+    if (!paymentForm.membershipStartDate) {
+      alert("Selecciona la fecha de inicio.");
+      return;
+    }
+
+    if (!paymentForm.membershipEndDate) {
+      alert("Selecciona la fecha de vencimiento.");
+      return;
+    }
+
+    const startDate = parseLocalDate(paymentForm.membershipStartDate);
+    const endDate = parseLocalDate(paymentForm.membershipEndDate);
+
+    if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
+      alert("La fecha de vencimiento no puede ser menor a la fecha de inicio.");
       return;
     }
 
@@ -281,6 +436,8 @@ export function Pagos() {
         method: paymentForm.method,
         amount,
         paymentDate: paymentForm.paymentDate,
+        membershipStartDate: paymentForm.membershipStartDate,
+        membershipEndDate: paymentForm.membershipEndDate,
         notes: paymentForm.notes,
       });
 
@@ -348,6 +505,10 @@ export function Pagos() {
       );
     })
     .slice(0, 5);
+
+  const selectedPlan = membershipPlans.find(
+    (plan) => plan.slug === paymentForm.membershipType,
+  );
 
   if (loading) {
     return (
@@ -483,9 +644,11 @@ export function Pagos() {
                   className="h-11 rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-sm text-white outline-none focus:border-gold-500"
                 >
                   <option value="todos">Todos los planes</option>
-                  <option value="semanal">Semanal</option>
-                  <option value="quincenal">Quincenal</option>
-                  <option value="mensual">Mensual</option>
+                  {membershipPlans.map((plan) => (
+                    <option key={plan.id} value={plan.slug}>
+                      {plan.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -709,9 +872,11 @@ export function Pagos() {
                   }
                   className="h-12 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 text-white outline-none focus:border-gold-500/50"
                 >
-                  <option value="semanal">Semanal · $150</option>
-                  <option value="quincenal">Quincenal · $280</option>
-                  <option value="mensual">Mensual · $500</option>
+                  {membershipPlans.map((plan) => (
+                    <option key={plan.id} value={plan.slug}>
+                      {plan.name} · {formatMoney(Number(plan.price))} · {formatPlanDuration(plan)} · {formatClassesPerDay(plan.classes_per_day)}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -738,7 +903,7 @@ export function Pagos() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm text-zinc-400">Monto</label>
+                <label className="text-sm text-zinc-400">Monto cobrado</label>
 
                 <Input
                   type="number"
@@ -752,6 +917,12 @@ export function Pagos() {
                     })
                   }
                 />
+
+                {selectedPlan && (
+                  <p className="text-xs text-zinc-500">
+                    Sugerido por el plan: {formatMoney(Number(selectedPlan.price || 0))}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -769,15 +940,60 @@ export function Pagos() {
                   className="[color-scheme:dark]"
                 />
               </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-zinc-400">Inicio de membresía</label>
+
+                <Input
+                  type="date"
+                  value={paymentForm.membershipStartDate}
+                  onChange={(event) =>
+                    handleMembershipStartDateChange(event.target.value)
+                  }
+                  className="[color-scheme:dark]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-zinc-400">Vencimiento</label>
+
+                <Input
+                  type="date"
+                  value={paymentForm.membershipEndDate}
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      membershipEndDate: event.target.value,
+                    })
+                  }
+                  className="[color-scheme:dark]"
+                />
+
+                <p className="text-xs text-zinc-500">
+                  El sistema sugiere domingo, pero el admin puede ajustar.
+                </p>
+              </div>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm text-zinc-500">Resumen</p>
-                  <p className="mt-1 font-semibold capitalize text-white">
-                    Membresía {paymentForm.membershipType}
+                  <p className="mt-1 font-semibold text-white">
+                    {selectedPlan ? `Membresía ${selectedPlan.name}` : "Selecciona un plan"}
                   </p>
+
+                  {selectedPlan && (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Duración: {formatPlanDuration(selectedPlan)} · {formatClassesPerDay(selectedPlan.classes_per_day)}
+                    </p>
+                  )}
+
+                  {selectedPlan && (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Vigencia: {formatDate(paymentForm.membershipStartDate)} → {formatDate(paymentForm.membershipEndDate)}
+                    </p>
+                  )}
                 </div>
 
                 <p className="text-2xl font-bold text-gold-500">
@@ -813,7 +1029,7 @@ export function Pagos() {
               <Button
                 variant="gold"
                 className="gap-2"
-                disabled={saving}
+                disabled={saving || membershipPlans.length === 0}
                 onClick={handleRegisterPayment}
               >
                 {saving ? (

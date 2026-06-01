@@ -1,46 +1,46 @@
 // 📍 Ruta del archivo: src/pages/auth/Login.tsx
 
-import { Link, useNavigate } from "react-router-dom";
-import { useState, FormEvent } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState, FormEvent } from "react";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 import { Card, CardContent } from "@/src/components/ui/Card";
-import { Users, LayoutDashboard } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Users,
+  LayoutDashboard,
+  MessageCircle,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { supabase } from "@/src/lib/supabase";
 
-export function Login() {
-  const navigate = useNavigate();
+const TXS_WHATSAPP_NUMBER = "528991019210";
 
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [selectedRole, setSelectedRole] = useState<"alumno" | "admin">(
-    "alumno",
-  );
+function normalizePhone(value: string) {
+  return value.replace(/[^0-9+]/g, "").trim();
+}
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+function buildRegistrationMessage({
+  fullName,
+  email,
+  phone,
+  password,
+}: {
+  fullName: string;
+  email: string;
+  phone: string;
+  password: string;
+}) {
+  return `Hola TXS Academy.
 
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-
-  const handleAuth = async (e: FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage("");
-
-    try {
-      // Registro como solicitud manual
-      if (mode === "register") {
-        const subject = encodeURIComponent(
-          "Nueva solicitud de registro TXS HUB",
-        );
-
-        const body = encodeURIComponent(`
-Nueva solicitud de registro TXS HUB
+Quiero solicitar mi registro al portal de alumnos TXS HUB.
 
 Nombre completo:
 ${fullName}
+
+Teléfono:
+${phone}
 
 Correo:
 ${email}
@@ -48,21 +48,121 @@ ${email}
 Contraseña solicitada:
 ${password}
 
-Mensaje:
-Solicito acceso al portal de alumnos TXS HUB.
+Quedo pendiente de validación por administración.`;
+}
 
-Pendiente de validación por administración.
-`);
+export function Login() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [mode, setMode] = useState<"login" | "register">(
+    searchParams.get("mode") === "register" ? "register" : "login",
+  );
+  const [selectedRole, setSelectedRole] = useState<"alumno" | "admin">(
+    "alumno",
+  );
+
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setMode(searchParams.get("mode") === "register" ? "register" : "login");
+  }, [searchParams]);
+
+  function changeMode(nextMode: "login" | "register") {
+    setMode(nextMode);
+    setMessage("");
+
+    if (nextMode === "register") {
+      setSearchParams({ mode: "register" });
+      return;
+    }
+
+    setSearchParams({});
+  }
+
+  const handleAuth = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage("");
+
+    try {
+      if (mode === "register") {
+        const cleanFullName = fullName.trim();
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanPhone = normalizePhone(phone);
+        const cleanPassword = password.trim();
+
+        if (!cleanFullName || !cleanEmail || !cleanPhone || !cleanPassword) {
+          throw new Error("Completa nombre, teléfono, correo y contraseña.");
+        }
+
+        if (cleanPassword.length < 6) {
+          throw new Error("La contraseña debe tener mínimo 6 caracteres.");
+        }
+
+        const whatsappMessage = buildRegistrationMessage({
+          fullName: cleanFullName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          password: cleanPassword,
+        });
+
+        const internalMessage = `Nueva solicitud de registro desde el portal público.
+
+Nombre completo:
+${cleanFullName}
+
+Teléfono:
+${cleanPhone}
+
+Correo:
+${cleanEmail}
+
+Contraseña solicitada:
+${cleanPassword}
+
+Acción sugerida:
+Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por WhatsApp.`;
+
+        const { error: messageError } = await supabase.from("messages").insert({
+          student_id: null,
+          sender_email: cleanEmail,
+          sender_name: cleanFullName,
+          category: "otro",
+          subject: "Nueva solicitud de registro TXS HUB",
+          message: internalMessage,
+          status: "pendiente",
+        });
+
+        if (messageError) {
+          console.error(messageError);
+          throw new Error(
+            "No se pudo enviar la solicitud al buzón interno. Revisa la policy de mensajes públicos en Supabase.",
+          );
+        }
 
         window.open(
-          `https://mail.google.com/mail/?view=cm&fs=1&to=registro@txshub.com&su=${subject}&body=${body}`,
+          `https://wa.me/${TXS_WHATSAPP_NUMBER}?text=${encodeURIComponent(
+            whatsappMessage,
+          )}`,
           "_blank",
+          "noopener,noreferrer",
         );
 
         setMessage(
-          "Se abrirá tu aplicación de correo para enviar la solicitud.",
+          "Solicitud enviada al buzón interno. También se abrió WhatsApp para completar el registro.",
         );
-
+        setFullName("");
+        setPhone("");
+        setEmail("");
+        setPassword("");
         setLoading(false);
         return;
       }
@@ -129,7 +229,7 @@ Pendiente de validación por administración.
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-txs-black relative overflow-hidden px-4">
+    <div className="min-h-screen flex items-center justify-center bg-txs-black relative overflow-hidden px-4 py-10">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gold-500/10 via-txs-black to-txs-black pointer-events-none mix-blend-screen" />
       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-[0.05] mix-blend-color-dodge pointer-events-none" />
 
@@ -158,7 +258,7 @@ Pendiente de validación por administración.
           <p className="text-zinc-400 mt-6 font-light tracking-wide">
             {mode === "login"
               ? "Accede a tu portal exclusivo"
-              : "Crea tu cuenta de alumno"}
+              : "Solicita tu cuenta de alumno por WhatsApp"}
           </p>
         </motion.div>
 
@@ -167,7 +267,7 @@ Pendiente de validación por administración.
             <div className="grid grid-cols-2 gap-3 mb-8">
               <button
                 type="button"
-                onClick={() => setMode("login")}
+                onClick={() => changeMode("login")}
                 className={`rounded-xl border p-3 text-sm font-bold transition-all ${
                   mode === "login"
                     ? "border-gold-500 bg-gold-500/10 text-gold-400"
@@ -179,7 +279,7 @@ Pendiente de validación por administración.
 
               <button
                 type="button"
-                onClick={() => setMode("register")}
+                onClick={() => changeMode("register")}
                 className={`rounded-xl border p-3 text-sm font-bold transition-all ${
                   mode === "register"
                     ? "border-gold-500 bg-gold-500/10 text-gold-400"
@@ -222,18 +322,33 @@ Pendiente de validación por administración.
               )}
 
               {mode === "register" && (
-                <div className="space-y-2">
-                  <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
-                    Nombre completo
-                  </label>
-                  <Input
-                    type="text"
-                    placeholder="Nombre del alumno"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                  />
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
+                      Nombre completo
+                    </label>
+                    <Input
+                      type="text"
+                      placeholder="Nombre del alumno"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
+                      Número de teléfono
+                    </label>
+                    <Input
+                      type="tel"
+                      placeholder="Ej. 8991019210"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      required
+                    />
+                  </div>
+                </>
               )}
 
               <div className="space-y-2">
@@ -253,15 +368,44 @@ Pendiente de validación por administración.
                 <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
                   Contraseña
                 </label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    className="pr-12"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-zinc-500 transition hover:bg-white/5 hover:text-gold-400"
+                    aria-label={
+                      showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                    }
+                    title={
+                      showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                    }
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
+
+              {mode === "register" && (
+                <div className="rounded-xl border border-gold-500/30 bg-gold-500/10 p-4 text-sm text-gold-200">
+                  <div className="flex items-start gap-3">
+                    <MessageCircle className="mt-0.5 h-5 w-5 shrink-0 text-gold-400" />
+                    <p>
+                      Al enviar tu solicitud, se guardará en la bandeja interna
+                      del admin y se abrirá WhatsApp para completar el registro.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {message && (
                 <div className="rounded-xl border border-gold-500/20 bg-gold-500/10 p-3 text-sm text-gold-300">
@@ -279,7 +423,7 @@ Pendiente de validación por administración.
                   ? "Procesando..."
                   : mode === "login"
                     ? "Iniciar sesión"
-                    : "Enviar solicitud"}
+                    : "Enviar registro"}
               </Button>
             </form>
 

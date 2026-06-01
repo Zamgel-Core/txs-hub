@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import {
+  CalendarDays,
+  CreditCard,
   Edit,
+  Eye,
+  EyeOff,
   Loader2,
   Plus,
   RefreshCw,
@@ -22,6 +26,12 @@ interface Student {
   temporary_password: string;
   is_active: boolean;
   group_id?: string | null;
+  membership_status?: string | null;
+  membership_type?: string | null;
+  membership_start_date?: string | null;
+  membership_end_date?: string | null;
+  last_payment_date?: string | null;
+  payment_notes?: string | null;
 }
 
 interface Group {
@@ -33,6 +43,18 @@ interface Group {
   sort_order?: number | null;
 }
 
+interface MembershipPlan {
+  id: string;
+  name: string;
+  slug: string;
+  price: number;
+  duration_count: number;
+  duration_unit: "days" | "weeks" | "months";
+  classes_per_day?: number | null;
+  is_active: boolean;
+  sort_order?: number | null;
+}
+
 const emptyForm = {
   id: "",
   full_name: "",
@@ -41,11 +63,75 @@ const emptyForm = {
   group_id: "",
   temporary_password: "",
   is_active: true,
+  membership_status: "vencida",
+  membership_type: "",
+  membership_start_date: "",
+  membership_end_date: "",
+  last_payment_date: "",
+  payment_notes: "",
 };
+
+function formatDateLocal(date?: string | null) {
+  if (!date) return "Sin fecha";
+
+  const cleanDate = String(date).trim();
+  if (!cleanDate) return "Sin fecha";
+
+  const dateOnly = cleanDate.includes("T")
+    ? cleanDate.split("T")[0]
+    : cleanDate;
+  const [year, month, day] = dateOnly.split("-").map(Number);
+
+  if (!year || !month || !day) return "Sin fecha";
+
+  const parsed = new Date(year, month - 1, day);
+
+  if (Number.isNaN(parsed.getTime())) return "Sin fecha";
+
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(parsed);
+}
+
+function normalizeDateInput(date?: string | null) {
+  if (!date) return "";
+  return String(date).includes("T") ? String(date).split("T")[0] : String(date);
+}
+
+function getMembershipBadge(status?: string | null) {
+  const normalized = String(status || "vencida").toLowerCase();
+
+  if (normalized === "activa") {
+    return "bg-emerald-500/20 text-emerald-400 border-emerald-500/20";
+  }
+
+  if (normalized === "pausada") {
+    return "bg-blue-500/15 text-blue-300 border-blue-500/20";
+  }
+
+  if (normalized === "cancelada") {
+    return "bg-zinc-500/15 text-zinc-300 border-zinc-600/30";
+  }
+
+  return "bg-red-500/20 text-red-400 border-red-500/20";
+}
+
+function getMembershipLabel(status?: string | null) {
+  const normalized = String(status || "vencida").toLowerCase();
+
+  if (normalized === "activa") return "Activa";
+  if (normalized === "pausada") return "Pausada";
+  if (normalized === "cancelada") return "Cancelada";
+
+  return "Vencida";
+}
 
 export function Alumnos() {
   const [students, setStudents] = useState<Student[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -58,10 +144,12 @@ export function Alumnos() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
 
   const [form, setForm] = useState(emptyForm);
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
 
   useEffect(() => {
     loadStudents();
     loadGroups();
+    loadMembershipPlans();
   }, []);
 
   async function loadGroups() {
@@ -77,6 +165,20 @@ export function Alumnos() {
     }
 
     setGroups(data || []);
+  }
+
+  async function loadMembershipPlans() {
+    const { data, error } = await supabase
+      .from("membership_plans")
+      .select("*")
+      .order("sort_order", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setMembershipPlans(data || []);
   }
 
   async function loadStudents() {
@@ -146,14 +248,24 @@ export function Alumnos() {
     };
   }
 
+  function getPlanName(slug?: string | null) {
+    if (!slug) return "Sin plan";
+
+    const plan = membershipPlans.find((item) => item.slug === slug);
+
+    return plan?.name || slug;
+  }
+
   function openCreateModal() {
     setModalMode("create");
+    setShowTemporaryPassword(false);
     setForm(emptyForm);
     setIsModalOpen(true);
   }
 
   function openEditModal(student: Student) {
     setModalMode("edit");
+    setShowTemporaryPassword(false);
 
     setForm({
       id: student.id,
@@ -163,6 +275,12 @@ export function Alumnos() {
       group_id: student.group_id || "",
       temporary_password: student.temporary_password || "",
       is_active: student.is_active,
+      membership_status: student.membership_status || "vencida",
+      membership_type: student.membership_type || "",
+      membership_start_date: normalizeDateInput(student.membership_start_date),
+      membership_end_date: normalizeDateInput(student.membership_end_date),
+      last_payment_date: normalizeDateInput(student.last_payment_date),
+      payment_notes: student.payment_notes || "",
     });
 
     setIsModalOpen(true);
@@ -247,6 +365,13 @@ export function Alumnos() {
           group_level: selectedGroup?.level || "principiante",
           temporary_password: form.temporary_password,
           is_active: form.is_active,
+          membership_status: form.membership_status || "vencida",
+          membership_type: form.membership_type || null,
+          membership_start_date: form.membership_start_date || null,
+          membership_end_date: form.membership_end_date || null,
+          last_payment_date: form.last_payment_date || null,
+          payment_notes: form.payment_notes || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", form.id);
 
@@ -302,7 +427,7 @@ export function Alumnos() {
         </div>
       </div>
 
-      <div className="w-full max-w-[1500px] mx-auto bg-[#090909] border border-yellow-500/20 rounded-3xl overflow-hidden">
+      <div className="w-full max-w-[1600px] mx-auto bg-[#090909] border border-yellow-500/20 rounded-3xl overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-zinc-900 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
           <div className="relative">
             <Search
@@ -334,17 +459,18 @@ export function Alumnos() {
           </select>
         </div>
 
-        <div className="hidden lg:block overflow-hidden">
+        <div className="hidden xl:block overflow-hidden">
           <table className="w-full table-fixed text-sm">
             <colgroup>
-              <col className="w-[18%]" />
-              <col className="w-[12%]" />
-              <col className="w-[22%]" />
-              <col className="w-[12%]" />
+              <col className="w-[17%]" />
               <col className="w-[10%]" />
-              <col className="w-[11%]" />
+              <col className="w-[18%]" />
+              <col className="w-[13%]" />
+              <col className="w-[10%]" />
+              <col className="w-[14%]" />
               <col className="w-[8%]" />
-              <col className="w-[7%]" />
+              <col className="w-[5%]" />
+              <col className="w-[5%]" />
             </colgroup>
             <thead className="bg-[#0d0d0d]">
               <tr className="text-left text-zinc-500 text-sm">
@@ -353,8 +479,9 @@ export function Alumnos() {
                 <th className="px-3 py-4">Correo</th>
                 <th className="px-3 py-4">Grupo</th>
                 <th className="px-3 py-4">Horario</th>
-                <th className="px-3 py-4">Password</th>
+                <th className="px-3 py-4">Membresía</th>
                 <th className="px-3 py-4">Estado</th>
+                <th className="px-3 py-4">Password</th>
                 <th className="px-3 py-4 text-center">Editar</th>
               </tr>
             </thead>
@@ -362,7 +489,7 @@ export function Alumnos() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-20 text-zinc-500">
+                  <td colSpan={9} className="text-center py-20 text-zinc-500">
                     Cargando alumnos...
                   </td>
                 </tr>
@@ -416,8 +543,25 @@ export function Alumnos() {
                         )}
                       </td>
 
-                      <td className="px-3 py-5 text-yellow-400 font-semibold truncate">
-                        {student.temporary_password || "—"}
+                      <td className="px-3 py-5">
+                        <div className="space-y-1">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-bold ${getMembershipBadge(
+                              student.membership_status,
+                            )}`}
+                          >
+                            {getMembershipLabel(student.membership_status)}
+                          </span>
+
+                          <p className="text-xs text-zinc-300 truncate">
+                            {getPlanName(student.membership_type)}
+                          </p>
+
+                          <p className="text-xs text-zinc-500">
+                            Vence:{" "}
+                            {formatDateLocal(student.membership_end_date)}
+                          </p>
+                        </div>
                       </td>
 
                       <td className="px-3 py-5">
@@ -430,6 +574,10 @@ export function Alumnos() {
                         >
                           {student.is_active ? "Activo" : "Inactivo"}
                         </span>
+                      </td>
+
+                      <td className="px-3 py-5 text-yellow-400 font-semibold truncate">
+                        {student.temporary_password || "—"}
                       </td>
 
                       <td className="px-3 py-5 text-center">
@@ -449,7 +597,7 @@ export function Alumnos() {
 
               {!loading && filteredStudents.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-20 text-zinc-500">
+                  <td colSpan={9} className="text-center py-20 text-zinc-500">
                     No se encontraron alumnos.
                   </td>
                 </tr>
@@ -458,7 +606,7 @@ export function Alumnos() {
           </table>
         </div>
 
-        <div className="lg:hidden divide-y divide-zinc-900">
+        <div className="xl:hidden divide-y divide-zinc-900">
           {loading ? (
             <div className="py-16 text-center text-zinc-500">
               Cargando alumnos...
@@ -532,6 +680,34 @@ export function Alumnos() {
                           : groupInfo.schedule}
                       </p>
                     </div>
+
+                    <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/5 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-zinc-500 text-xs mb-1">
+                            Membresía
+                          </p>
+                          <p className="text-zinc-200 font-semibold">
+                            {getPlanName(student.membership_type)}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${getMembershipBadge(
+                            student.membership_status,
+                          )}`}
+                        >
+                          {getMembershipLabel(student.membership_status)}
+                        </span>
+                      </div>
+
+                      <p className="text-zinc-500 text-xs mt-2">
+                        Inicio: {formatDateLocal(student.membership_start_date)}
+                      </p>
+                      <p className="text-zinc-500 text-xs">
+                        Vence: {formatDateLocal(student.membership_end_date)}
+                      </p>
+                    </div>
                   </div>
 
                   <button
@@ -550,7 +726,7 @@ export function Alumnos() {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 px-4">
-          <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-[#090909] border border-yellow-500/20 rounded-3xl">
+          <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-[#090909] border border-yellow-500/20 rounded-3xl">
             <div className="flex items-center justify-between px-5 sm:px-8 py-6 border-b border-zinc-900">
               <div>
                 <h2 className="text-2xl sm:text-3xl font-black">
@@ -560,7 +736,7 @@ export function Alumnos() {
                 <p className="text-zinc-500 mt-1">
                   {modalMode === "create"
                     ? "Crear acceso completo al portal."
-                    : "Actualizar información administrativa del alumno."}
+                    : "Actualizar información administrativa y membresía del alumno."}
                 </p>
               </div>
 
@@ -572,123 +748,309 @@ export function Alumnos() {
               </button>
             </div>
 
-            <div className="p-5 sm:p-8 space-y-5">
-              <div>
-                <label className="text-sm text-zinc-500 mb-2 block">
-                  Nombre completo
-                </label>
-
-                <input
-                  type="text"
-                  value={form.full_name}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      full_name: e.target.value,
-                    })
-                  }
-                  className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="text-sm text-zinc-500 mb-2 block">
-                    Correo electrónico
-                  </label>
-
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        email: e.target.value,
-                      })
-                    }
-                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
-                  />
+            <div className="p-5 sm:p-8 space-y-6">
+              <div className="rounded-3xl border border-zinc-900 bg-black/25 p-5 space-y-5">
+                <div className="flex items-center gap-3">
+                  <Users className="h-5 w-5 text-yellow-400" />
+                  <div>
+                    <h3 className="font-black">Datos del alumno</h3>
+                    <p className="text-sm text-zinc-500">
+                      Información general y acceso al portal.
+                    </p>
+                  </div>
                 </div>
 
                 <div>
                   <label className="text-sm text-zinc-500 mb-2 block">
-                    Teléfono
+                    Nombre completo
                   </label>
 
                   <input
                     type="text"
-                    value={form.phone}
+                    value={form.full_name}
                     onChange={(e) =>
                       setForm({
                         ...form,
-                        phone: e.target.value,
+                        full_name: e.target.value,
                       })
                     }
                     className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="text-sm text-zinc-500 mb-2 block">
-                  Grupo asignado
-                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="text-sm text-zinc-500 mb-2 block">
+                      Correo electrónico
+                    </label>
 
-                <select
-                  value={form.group_id}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      group_id: e.target.value,
-                    })
-                  }
-                  className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
-                >
-                  <option value="">Selecciona un grupo...</option>
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          email: e.target.value,
+                        })
+                      }
+                      className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                    />
+                  </div>
 
-                  {groups.map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name} • {group.days || "Sin días"} •{" "}
-                      {group.schedule}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <div>
+                    <label className="text-sm text-zinc-500 mb-2 block">
+                      Teléfono
+                    </label>
 
-              <div>
-                <label className="text-sm text-zinc-500 mb-2 block">
-                  Password temporal
-                </label>
+                    <input
+                      type="text"
+                      value={form.phone}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          phone: e.target.value,
+                        })
+                      }
+                      className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                    />
+                  </div>
+                </div>
 
-                <input
-                  type="text"
-                  value={form.temporary_password}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      temporary_password: e.target.value,
-                    })
-                  }
-                  className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
-                />
-              </div>
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Grupo asignado
+                  </label>
 
-              {modalMode === "edit" && (
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.is_active}
+                  <select
+                    value={form.group_id}
                     onChange={(e) =>
                       setForm({
                         ...form,
-                        is_active: e.target.checked,
+                        group_id: e.target.value,
                       })
                     }
-                    className="w-4 h-4"
-                  />
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                  >
+                    <option value="">Selecciona un grupo...</option>
 
-                  <span className="text-sm text-zinc-300">Alumno activo</span>
-                </label>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name} • {group.days || "Sin días"} •{" "}
+                        {group.schedule}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Password temporal
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type={showTemporaryPassword ? "text" : "password"}
+                      value={form.temporary_password}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          temporary_password: e.target.value,
+                        })
+                      }
+                      className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 pr-12 outline-none focus:border-yellow-500/40"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowTemporaryPassword((current) => !current)
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-zinc-500 transition hover:bg-white/5 hover:text-yellow-400"
+                      aria-label={
+                        showTemporaryPassword
+                          ? "Ocultar password temporal"
+                          : "Mostrar password temporal"
+                      }
+                      title={
+                        showTemporaryPassword
+                          ? "Ocultar password temporal"
+                          : "Mostrar password temporal"
+                      }
+                    >
+                      {showTemporaryPassword ? (
+                        <EyeOff size={18} />
+                      ) : (
+                        <Eye size={18} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {modalMode === "edit" && (
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.is_active}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          is_active: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4"
+                    />
+
+                    <span className="text-sm text-zinc-300">Alumno activo</span>
+                  </label>
+                )}
+              </div>
+
+              {modalMode === "edit" && (
+                <div className="rounded-3xl border border-yellow-500/20 bg-yellow-500/5 p-5 space-y-5">
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="h-5 w-5 text-yellow-400" />
+                    <div>
+                      <h3 className="font-black">Ajuste manual de membresía</h3>
+                      <p className="text-sm text-zinc-500">
+                        Usa esta sección para corregir fechas si un pago o
+                        vencimiento se registró mal.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                    Esto actualiza la membresía actual del alumno. No modifica
+                    el historial de pagos.
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-sm text-zinc-500 mb-2 block">
+                        Estado de membresía
+                      </label>
+
+                      <select
+                        value={form.membership_status}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            membership_status: e.target.value,
+                          })
+                        }
+                        className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                      >
+                        <option value="activa">Activa</option>
+                        <option value="vencida">Vencida</option>
+                        <option value="pausada">Pausada</option>
+                        <option value="cancelada">Cancelada</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-zinc-500 mb-2 block">
+                        Plan / tipo de membresía
+                      </label>
+
+                      <select
+                        value={form.membership_type}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            membership_type: e.target.value,
+                          })
+                        }
+                        className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                      >
+                        <option value="">Sin plan asignado</option>
+
+                        {membershipPlans.map((plan) => (
+                          <option key={plan.id} value={plan.slug}>
+                            {plan.name}
+                            {!plan.is_active ? " (inactivo)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div>
+                      <label className="text-sm text-zinc-500 mb-2 flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        Fecha inicio
+                      </label>
+
+                      <input
+                        type="date"
+                        value={form.membership_start_date}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            membership_start_date: e.target.value,
+                          })
+                        }
+                        className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-zinc-500 mb-2 flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        Fecha vencimiento
+                      </label>
+
+                      <input
+                        type="date"
+                        value={form.membership_end_date}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            membership_end_date: e.target.value,
+                          })
+                        }
+                        className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-zinc-500 mb-2 flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        Último pago
+                      </label>
+
+                      <input
+                        type="date"
+                        value={form.last_payment_date}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            last_payment_date: e.target.value,
+                          })
+                        }
+                        className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-zinc-500 mb-2 block">
+                      Notas de membresía / pago
+                    </label>
+
+                    <textarea
+                      value={form.payment_notes}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          payment_notes: e.target.value,
+                        })
+                      }
+                      rows={3}
+                      placeholder="Ej. Corrección manual: pago real fue el 09 de mayo, no el 09 de junio."
+                      className="w-full resize-none bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                    />
+                  </div>
+                </div>
               )}
             </div>
 

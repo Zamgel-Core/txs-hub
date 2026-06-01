@@ -3,7 +3,7 @@
 import { supabase } from "@/src/lib/supabase";
 
 export type MembershipStatus = "activa" | "vencida" | "pendiente";
-export type MembershipType = "semanal" | "quincenal" | "mensual";
+export type MembershipType = string;
 export type PaymentMethod = "efectivo" | "transferencia" | "tarjeta" | "otro";
 
 export type PaymentStudent = {
@@ -30,6 +30,13 @@ export type PaymentRecord = {
   status: string;
   notes: string | null;
   created_at: string;
+  membership_plan_id?: string | null;
+  plan_slug_snapshot?: string | null;
+  plan_name_snapshot?: string | null;
+  suggested_amount?: number | null;
+  membership_start_date?: string | null;
+  membership_end_date?: string | null;
+  classes_per_day_snapshot?: number | null;
   students?: {
     full_name: string;
     email: string;
@@ -42,6 +49,8 @@ export type RegisterPaymentPayload = {
   method: PaymentMethod;
   amount: number;
   paymentDate: string;
+  membershipStartDate: string;
+  membershipEndDate: string;
   notes: string;
 };
 
@@ -52,11 +61,15 @@ export type StudentPaymentPortalData = {
     email: string;
     membership_status: MembershipStatus | null;
     membership_type: MembershipType | null;
+    membership_start_date: string | null;
     membership_end_date: string | null;
     last_payment_date: string | null;
   } | null;
   payments: PaymentRecord[];
 };
+
+const paymentSelect =
+  "id, student_id, payment_date, concept, method, amount, status, notes, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot, students(full_name, email)";
 
 export async function getPaymentStudents() {
   const { data, error } = await supabase
@@ -76,9 +89,7 @@ export async function getPaymentStudents() {
 export async function getRecentPayments(limit = 50) {
   const { data, error } = await supabase
     .from("payments")
-    .select(
-      "id, student_id, payment_date, concept, method, amount, status, notes, created_at, students(full_name, email)",
-    )
+    .select(paymentSelect)
     .order("payment_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -109,6 +120,8 @@ export async function registerAdminPayment(payload: RegisterPaymentPayload) {
     p_method: payload.method,
     p_amount: payload.amount,
     p_payment_date: payload.paymentDate,
+    p_membership_start_date: payload.membershipStartDate,
+    p_membership_end_date: payload.membershipEndDate,
     p_notes: payload.notes || null,
   });
 
@@ -123,7 +136,7 @@ export async function getStudentPaymentPortalData(
   const { data: studentData, error: studentError } = await supabase
     .from("students")
     .select(
-      "id, full_name, email, membership_status, membership_type, membership_end_date, last_payment_date",
+      "id, full_name, email, membership_status, membership_type, membership_start_date, membership_end_date, last_payment_date",
     )
     .ilike("email", email)
     .maybeSingle();
@@ -141,7 +154,9 @@ export async function getStudentPaymentPortalData(
 
   const { data: paymentsData, error: paymentsError } = await supabase
     .from("payments")
-    .select("id, student_id, payment_date, concept, method, amount, status, notes, created_at")
+    .select(
+      "id, student_id, payment_date, concept, method, amount, status, notes, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot",
+    )
     .eq("student_id", studentData.id)
     .order("payment_date", { ascending: false })
     .order("created_at", { ascending: false });

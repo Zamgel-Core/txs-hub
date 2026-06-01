@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Search,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -92,6 +93,7 @@ export function Mensajes() {
   );
   const [replyText, setReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadMessages();
@@ -224,6 +226,48 @@ export function Mensajes() {
     setSelectedMessage(null);
     setReplyText("");
 
+    await loadMessages();
+  }
+
+  async function deleteMessage(message: MessageItem) {
+    const confirmed = window.confirm(
+      `¿Eliminar este mensaje?\n\n${message.subject}\n\nEsta acción también eliminará sus respuestas y no se puede deshacer.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingId(message.id);
+
+    const { error: repliesError } = await supabase
+      .from("message_replies")
+      .delete()
+      .eq("message_id", message.id);
+
+    if (repliesError) {
+      console.error(repliesError);
+      setDeletingId(null);
+      window.alert("No se pudieron eliminar las respuestas del mensaje.");
+      return;
+    }
+
+    const { error: messageError } = await supabase
+      .from("messages")
+      .delete()
+      .eq("id", message.id);
+
+    if (messageError) {
+      console.error(messageError);
+      setDeletingId(null);
+      window.alert("No se pudo eliminar el mensaje.");
+      return;
+    }
+
+    if (selectedMessage?.id === message.id) {
+      setSelectedMessage(null);
+      setReplyText("");
+    }
+
+    setDeletingId(null);
     await loadMessages();
   }
 
@@ -439,6 +483,15 @@ export function Mensajes() {
                     >
                       <MessageSquare className="w-4 h-4" />
                       Responder
+                    </button>
+
+                    <button
+                      onClick={() => deleteMessage(item)}
+                      disabled={deletingId === item.id}
+                      className="flex-1 xl:w-full h-11 rounded-xl border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      {deletingId === item.id ? "Eliminando..." : "Eliminar"}
                     </button>
                   </div>
                 </div>

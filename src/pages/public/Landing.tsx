@@ -16,12 +16,28 @@ import { Link } from "react-router-dom";
 import { motion, useMotionValue, useTransform, animate } from "motion/react";
 
 import { Button } from "@/src/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/src/components/ui/Card";
 import { getActiveEvents, type EventItem } from "@/src/services/eventsService";
 
-function AnimatedStat({ value, suffix = "", decimals = 0, label, delay = 0, prefix = "", borderClasses = "" }: any) {
+function AnimatedStat({
+  value,
+  suffix = "",
+  decimals = 0,
+  label,
+  delay = 0,
+  prefix = "",
+  borderClasses = "",
+}: any) {
   const count = useMotionValue(0);
-  const display = useTransform(count, (latest) => prefix + latest.toFixed(decimals) + suffix);
+  const display = useTransform(
+    count,
+    (latest) => prefix + latest.toFixed(decimals) + suffix,
+  );
   const [hasAnimated, setHasAnimated] = useState(false);
 
   return (
@@ -73,7 +89,12 @@ function formatEventTime(time: string | null) {
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
 
-  if (Number.isNaN(hours) || Number.isNaN(minutes) || hours > 23 || minutes > 59) {
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours > 23 ||
+    minutes > 59
+  ) {
     return "Horario por confirmar";
   }
 
@@ -212,7 +233,12 @@ export function Landing() {
               transition={{ duration: 1, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
               className="max-w-2xl text-lg sm:text-xl md:text-2xl text-zinc-300 mb-12 font-light tracking-wide leading-relaxed drop-shadow-md"
             >
-              Un solo lugar, <span className="font-semibold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">todas las experiencias</span>. Donde la pasión por el baile texano, la cumbia y los grandes espectáculos se encuentran en un ambiente premium.
+              Un solo lugar,{" "}
+              <span className="font-semibold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
+                todas las experiencias
+              </span>
+              . Donde la pasión por el baile texano, la cumbia y los grandes
+              espectáculos se encuentran en un ambiente premium.
             </motion.p>
 
             <motion.div
@@ -221,15 +247,25 @@ export function Landing() {
               transition={{ duration: 1, delay: 0.8, ease: [0.16, 1, 0.3, 1] }}
               className="flex flex-col sm:flex-row items-center justify-center xl:justify-start gap-5 w-full xl:w-auto"
             >
-              <Link to="/login" className="w-full sm:w-auto group relative inline-block">
+              <Link
+                to="/login"
+                className="w-full sm:w-auto group relative inline-block"
+              >
                 <div className="absolute -inset-1 bg-gradient-to-r from-gold-400 to-gold-600 rounded-lg blur opacity-40 group-hover:opacity-100 transition duration-500" />
-                <Button variant="gold" size="lg" className="relative w-full sm:w-auto text-lg h-14 px-10 shadow-[0_0_20px_rgba(212,175,55,0.3)] font-bold tracking-wider uppercase border border-gold-400/50 transform group-hover:-translate-y-0.5 transition-all duration-300">
+                <Button
+                  variant="gold"
+                  size="lg"
+                  className="relative w-full sm:w-auto text-lg h-14 px-10 shadow-[0_0_20px_rgba(212,175,55,0.3)] font-bold tracking-wider uppercase border border-gold-400/50 transform group-hover:-translate-y-0.5 transition-all duration-300"
+                >
                   Acceder al Portal
                 </Button>
               </Link>
 
               <Link to="/academia" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto text-lg h-14 px-10 font-bold tracking-wider uppercase bg-txs-card/50 backdrop-blur-md border border-zinc-700/50 hover:bg-zinc-800/80 hover:border-gold-500/50 hover:text-gold-400 hover:shadow-[0_0_20px_rgba(212,175,55,0.15)] transform hover:-translate-y-0.5 transition-all duration-300 group">
+                <Button
+                  size="lg"
+                  className="w-full sm:w-auto text-lg h-14 px-10 font-bold tracking-wider uppercase bg-txs-card/50 backdrop-blur-md border border-zinc-700/50 hover:bg-zinc-800/80 hover:border-gold-500/50 hover:text-gold-400 hover:shadow-[0_0_20px_rgba(212,175,55,0.15)] transform hover:-translate-y-0.5 transition-all duration-300 group"
+                >
                   Conocer más
                   <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1.5 transition-transform duration-300" />
                 </Button>
@@ -239,7 +275,10 @@ export function Landing() {
         </div>
       </section>
 
-      <section id="experiencias" className="py-24 relative overflow-hidden bg-txs-black">
+      <section
+        id="experiencias"
+        className="py-24 relative overflow-hidden bg-txs-black"
+      >
         <div className="absolute top-0 w-full h-[1px] bg-gradient-to-r from-transparent via-gold-500/20 to-transparent" />
         <div className="absolute -left-40 top-40 w-96 h-96 bg-gold-500/5 blur-[100px] rounded-full pointer-events-none" />
 
@@ -251,7 +290,11 @@ export function Landing() {
                 initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
-                transition={{ duration: 0.7, delay: i * 0.2, ease: [0.16, 1, 0.3, 1] }}
+                transition={{
+                  duration: 0.7,
+                  delay: i * 0.2,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
               >
                 <Link to={card.path} className="block h-full">
                   <Card className="h-full bg-txs-card/90 backdrop-blur-xl border border-zinc-800/80 hover:border-gold-500/50 hover:bg-txs-card transition-all duration-500 group transform hover:-translate-y-2 shadow-2xl hover:shadow-[0_20px_40px_-15px_rgba(212,175,55,0.2)] relative overflow-hidden">
@@ -265,9 +308,12 @@ export function Landing() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="relative z-10 flex flex-col h-[calc(100%-112px)]">
-                      <p className="text-zinc-400 leading-relaxed text-sm md:text-base font-light mb-auto pb-6">{card.desc}</p>
+                      <p className="text-zinc-400 leading-relaxed text-sm md:text-base font-light mb-auto pb-6">
+                        {card.desc}
+                      </p>
                       <div className="flex items-center text-gold-500 text-sm font-bold tracking-wider uppercase group-hover:text-gold-400 transition-colors mt-auto">
-                        {card.link} <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-2 transition-transform duration-300" />
+                        {card.link}{" "}
+                        <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-2 transition-transform duration-300" />
                       </div>
                     </CardContent>
                   </Card>
@@ -294,10 +340,34 @@ export function Landing() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-gold-500/10 rounded-full blur-[80px] pointer-events-none transition-transform duration-1000 group-hover/container:scale-125" />
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-gold-500/10 rounded-full blur-[80px] pointer-events-none transition-transform duration-1000 group-hover/container:scale-125" />
 
-            <AnimatedStat value={500} prefix="+" label="Alumnos Activos" delay={0.1} borderClasses="border-b sm:border-b-0 sm:border-r last:border-0 lg:border-b-0" />
-            <AnimatedStat value={120} prefix="+" label="Eventos Inolvidables" delay={0.2} borderClasses="border-b sm:border-b-0 lg:border-r last:border-0" />
-            <AnimatedStat value={15} prefix="+" label="Años de Exp." delay={0.3} borderClasses="border-b sm:border-b-0 sm:border-r last:border-0 lg:border-b-0" />
-            <AnimatedStat value={4.9} decimals={1} label="Calificación" delay={0.4} borderClasses="last:border-0" />
+            <AnimatedStat
+              value={500}
+              prefix="+"
+              label="Clientes satisfechos"
+              delay={0.1}
+              borderClasses="border-b sm:border-b-0 sm:border-r last:border-0 lg:border-b-0"
+            />
+            <AnimatedStat
+              value={120}
+              prefix="+"
+              label="Eventos Inolvidables"
+              delay={0.2}
+              borderClasses="border-b sm:border-b-0 lg:border-r last:border-0"
+            />
+            <AnimatedStat
+              value={15}
+              prefix="+"
+              label="Años de Exp."
+              delay={0.3}
+              borderClasses="border-b sm:border-b-0 sm:border-r last:border-0 lg:border-b-0"
+            />
+            <AnimatedStat
+              value={4.9}
+              decimals={1}
+              label="Calificación"
+              delay={0.4}
+              borderClasses="last:border-0"
+            />
           </motion.div>
         </div>
       </section>
@@ -324,15 +394,20 @@ export function Landing() {
             </div>
             <div className="hidden sm:block flex-1 mx-8 border-t border-dashed border-zinc-700/50" />
             <Link to="/eventos">
-              <Button variant="outline" className="text-gold-500 hover:text-gold-400 hover:bg-gold-500/10 border-gold-500/30 uppercase tracking-widest font-bold text-xs h-12 px-6 rounded-full group hover:shadow-[0_0_15px_rgba(212,175,55,0.15)] transition-all">
-                Ver agenda completa <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
+              <Button
+                variant="outline"
+                className="text-gold-500 hover:text-gold-400 hover:bg-gold-500/10 border-gold-500/30 uppercase tracking-widest font-bold text-xs h-12 px-6 rounded-full group hover:shadow-[0_0_15px_rgba(212,175,55,0.15)] transition-all"
+              >
+                Ver agenda completa{" "}
+                <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
               </Button>
             </Link>
           </motion.div>
 
           {loadingEvents && (
             <div className="flex min-h-[180px] items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950/70 text-zinc-400">
-              <Loader2 className="mr-3 h-5 w-5 animate-spin text-gold-400" /> Cargando eventos...
+              <Loader2 className="mr-3 h-5 w-5 animate-spin text-gold-400" />{" "}
+              Cargando eventos...
             </div>
           )}
 
@@ -340,12 +415,17 @@ export function Landing() {
             <Card className="border-gold-500/20 bg-zinc-950/80 text-center">
               <CardContent className="p-10">
                 <Sparkles className="mx-auto mb-4 h-10 w-10 text-gold-400" />
-                <h3 className="text-2xl font-black text-white">Agenda en preparación</h3>
+                <h3 className="text-2xl font-black text-white">
+                  Agenda en preparación
+                </h3>
                 <p className="mx-auto mt-3 max-w-xl text-zinc-400">
-                  Cuando el administrador publique eventos activos, aparecerán automáticamente aquí.
+                  Cuando el administrador publique eventos activos, aparecerán
+                  automáticamente aquí.
                 </p>
                 <Link to="/eventos" className="mt-6 inline-block">
-                  <Button variant="gold" className="rounded-full px-7">Ir a eventos</Button>
+                  <Button variant="gold" className="rounded-full px-7">
+                    Ir a eventos
+                  </Button>
                 </Link>
               </CardContent>
             </Card>
@@ -362,22 +442,39 @@ export function Landing() {
                     initial={{ opacity: 0, x: index === 0 ? -30 : 30 }}
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true, margin: "-100px" }}
-                    transition={{ duration: 0.7, delay: 0.1 + index * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                    transition={{
+                      duration: 0.7,
+                      delay: 0.1 + index * 0.1,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
                   >
-                    <Link to="/eventos" className="group flex h-full flex-col sm:flex-row border border-zinc-800/80 rounded-2xl overflow-hidden bg-txs-card/80 backdrop-blur-md hover:border-gold-500/50 hover:shadow-[0_15px_40px_-5px_rgba(212,175,55,0.25)] transition-all duration-500 transform hover:-translate-y-1">
+                    <Link
+                      to="/eventos"
+                      className="group flex h-full flex-col sm:flex-row border border-zinc-800/80 rounded-2xl overflow-hidden bg-txs-card/80 backdrop-blur-md hover:border-gold-500/50 hover:shadow-[0_15px_40px_-5px_rgba(212,175,55,0.25)] transition-all duration-500 transform hover:-translate-y-1"
+                    >
                       <div className="bg-zinc-900/80 sm:w-40 flex sm:flex-col items-center justify-center border-b sm:border-b-0 sm:border-r border-zinc-800/80 text-center py-6 sm:p-6 gap-2 sm:gap-0 relative overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-b from-gold-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                        <span className="text-gold-500 text-sm font-bold uppercase tracking-[0.2em] sm:mb-2 relative z-10">{date.month}</span>
-                        <span className="text-5xl sm:text-6xl font-display font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-zinc-500 relative z-10 group-hover:from-white group-hover:to-gold-300 transition-all duration-500">{date.day}</span>
+                        <span className="text-gold-500 text-sm font-bold uppercase tracking-[0.2em] sm:mb-2 relative z-10">
+                          {date.month}
+                        </span>
+                        <span className="text-5xl sm:text-6xl font-display font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-zinc-500 relative z-10 group-hover:from-white group-hover:to-gold-300 transition-all duration-500">
+                          {date.day}
+                        </span>
                       </div>
 
                       <div className="p-6 md:p-8 flex-1 flex flex-col justify-center relative bg-gradient-to-br from-txs-card to-zinc-900/50 overflow-hidden">
                         <div className="absolute right-0 top-0 w-48 h-full bg-[radial-gradient(circle_at_top_right,_rgba(212,175,55,0.1),_transparent)] opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
-                        <h3 className="text-2xl font-display font-bold text-white mb-2 group-hover:text-gold-400 transition-colors drop-shadow-sm">{event.title}</h3>
+                        <h3 className="text-2xl font-display font-bold text-white mb-2 group-hover:text-gold-400 transition-colors drop-shadow-sm">
+                          {event.title}
+                        </h3>
                         <p className="text-gold-500 text-sm font-bold tracking-widest uppercase mb-4 flex items-center gap-2">
-                          <Warehouse className="w-4 h-4" /> {event.location || "Ubicación por confirmar"} &bull; {formatEventTime(event.event_time)}
+                          <Warehouse className="w-4 h-4" />{" "}
+                          {event.location || "Ubicación por confirmar"} &bull;{" "}
+                          {formatEventTime(event.event_time)}
                         </p>
-                        <p className="text-sm text-zinc-400 leading-relaxed font-light relative z-10 line-clamp-3">{event.description}</p>
+                        <p className="text-sm text-zinc-400 leading-relaxed font-light relative z-10 line-clamp-3">
+                          {event.description}
+                        </p>
                       </div>
                     </Link>
                   </motion.div>
