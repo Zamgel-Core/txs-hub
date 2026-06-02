@@ -1,10 +1,9 @@
 // 📍 Ruta del archivo: src/components/auth/ProtectedRoute.tsx
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/src/lib/supabase";
-
-type Role = "admin" | "alumno";
+import type { Role } from "@/src/types";
 
 export function ProtectedRoute({
   children,
@@ -16,8 +15,12 @@ export function ProtectedRoute({
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
 
+  const allowedKey = useMemo(() => allowedRoles.join(","), [allowedRoles]);
+
   useEffect(() => {
     async function checkAccess() {
+      setLoading(true);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -34,7 +37,9 @@ export function ProtectedRoute({
         .eq("id", user.id)
         .single();
 
-      if (profile && profile.is_active && allowedRoles.includes(profile.role)) {
+      const role = profile?.role as Role | undefined;
+
+      if (profile?.is_active && role && allowedRoles.includes(role)) {
         setAllowed(true);
       } else {
         setAllowed(false);
@@ -44,7 +49,7 @@ export function ProtectedRoute({
     }
 
     checkAccess();
-  }, [allowedRoles]);
+  }, [allowedKey]);
 
   if (loading) {
     return (

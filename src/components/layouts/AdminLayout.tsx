@@ -19,29 +19,77 @@ import {
 import { useEffect, useState } from "react";
 
 import { Button } from "../ui/Button";
-import { PoweredByZamgel } from "@/src/components/common/PoweredByZamgel";
+import { supabase } from "@/src/lib/supabase";
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [role, setRole] = useState<string>("admin");
   const location = useLocation();
 
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
 
-  const navItems = [
-    { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
-    { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
-    { name: "Alumnos", path: "/admin/alumnos", icon: Users },
-    { name: "Grupos", path: "/admin/grupos", icon: Users },
-    { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
-    { name: "Asistencia", path: "/admin/asistencia", icon: CalendarCheck },
-    { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
-    { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
-    { name: "Eventos", path: "/admin/eventos", icon: Calendar },
-    { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
-    { name: "Configuración", path: "/admin/configuracion", icon: Settings },
-  ];
+  useEffect(() => {
+    async function loadRole() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (data?.role) {
+        setRole(data.role);
+      }
+    }
+
+    loadRole();
+  }, []);
+
+  const navItems =
+    role === "moderator"
+      ? [
+          { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
+          { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
+          { name: "Alumnos", path: "/admin/alumnos", icon: Users },
+          { name: "Grupos", path: "/admin/grupos", icon: Users },
+          {
+            name: "Asistencia",
+            path: "/admin/asistencia",
+            icon: CalendarCheck,
+          },
+          { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
+          { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
+          { name: "Eventos", path: "/admin/eventos", icon: Calendar },
+          { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
+        ]
+      : [
+          { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
+          { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
+          { name: "Alumnos", path: "/admin/alumnos", icon: Users },
+          { name: "Grupos", path: "/admin/grupos", icon: Users },
+          { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
+          {
+            name: "Asistencia",
+            path: "/admin/asistencia",
+            icon: CalendarCheck,
+          },
+          { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
+          { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
+          { name: "Eventos", path: "/admin/eventos", icon: Calendar },
+          { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
+          {
+            name: "Configuración",
+            path: "/admin/configuracion",
+            icon: Settings,
+          },
+        ];
 
   return (
     <div className="min-h-screen bg-txs-black flex">
@@ -68,7 +116,7 @@ export function AdminLayout() {
             />
 
             <span className="font-display font-bold text-lg tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-r from-gold-400 to-gold-600 relative z-10 ml-3 hidden md:block lg:hidden xl:block">
-              ADMIN
+              {role === "moderator" ? "MOD" : "ADMIN"}
             </span>
           </div>
 
@@ -146,7 +194,7 @@ export function AdminLayout() {
           <div className="flex-1 flex justify-end">
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-zinc-300 hidden sm:inline-block">
-                Admin TXS
+                {role === "moderator" ? "Moderador TXS" : "Admin TXS"}
               </span>
 
               <Link
@@ -154,7 +202,7 @@ export function AdminLayout() {
                 className="w-10 h-10 md:w-8 md:h-8 rounded-full bg-gold-500/20 border border-gold-500/50 flex items-center justify-center text-gold-500 font-bold transition hover:scale-105 hover:bg-gold-500 hover:text-black"
                 title="Mi Perfil"
               >
-                A
+                {role === "moderator" ? "M" : "A"}
               </Link>
             </div>
           </div>

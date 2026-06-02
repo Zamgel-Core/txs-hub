@@ -1,6 +1,6 @@
-export type Role = 'admin' | 'instructor' | 'alumno';
+export type Role = "admin" | "moderator" | "alumno";
 
-export type EstadoAlumno = 'Pagado' | 'Pendiente' | 'Vencido' | 'Inactivo';
+export type EstadoAlumno = "Pagado" | "Pendiente" | "Vencido" | "Inactivo";
 
 export interface Alumno {
   id: string;
@@ -27,7 +27,7 @@ export interface Pago {
   alumnoId: string;
   plan: string;
   monto: number;
-  metodo: 'Efectivo' | 'Transferencia' | 'Mercado Pago' | 'Tarjeta';
+  metodo: "Efectivo" | "Transferencia" | "Mercado Pago" | "Tarjeta";
   fecha: string;
 }
 
@@ -36,7 +36,7 @@ export interface Asistencia {
   alumnoId: string;
   grupoId: string;
   fecha: string;
-  estado: 'Presente' | 'Ausente' | 'Justificado';
+  estado: "Presente" | "Ausente" | "Justificado";
 }
 
 export interface Evento {

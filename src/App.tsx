@@ -49,7 +49,10 @@ export default function App() {
         <Route element={<PublicLayout />}>
           <Route path="/" element={<Landing />} />
           <Route path="/academia" element={<Academia />} />
-          <Route path="/academia/inscripcion" element={<AcademiaInscripcion />} />
+          <Route
+            path="/academia/inscripcion"
+            element={<AcademiaInscripcion />}
+          />
           <Route path="/eventos" element={<EventosPublicos />} />
           <Route path="/producciones" element={<Producciones />} />
           <Route path="/palapa" element={<Palapa />} />
@@ -63,21 +66,47 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute allowedRoles={["admin"]}>
+            <ProtectedRoute allowedRoles={["admin", "moderator"]}>
               <AdminLayout />
             </ProtectedRoute>
           }
         >
           <Route index element={<AdminDashboard />} />
           <Route path="alumnos" element={<Alumnos />} />
-          <Route path="grupos" element={<Grupos />} />
-          <Route path="pagos" element={<Pagos />} />
+
+          <Route
+            path="grupos"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "moderator"]}>
+                <Grupos />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="pagos"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <Pagos />
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="asistencia" element={<Asistencia />} />
           <Route path="mensajes" element={<Mensajes />} />
           <Route path="avisos" element={<Avisos />} />
           <Route path="eventos" element={<Eventos />} />
           <Route path="reportes" element={<Reportes />} />
-          <Route path="configuracion" element={<Configuracion />} />
+
+          <Route
+            path="configuracion"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <Configuracion />
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="perfil" element={<MiPerfil mode="admin" />} />
         </Route>
 

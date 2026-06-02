@@ -199,7 +199,11 @@ Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por
         throw new Error("Tu cuenta está desactivada.");
       }
 
-      if (selectedRole === "admin" && profile.role !== "admin") {
+      if (
+        selectedRole === "admin" &&
+        profile.role !== "admin" &&
+        profile.role !== "moderator"
+      ) {
         await supabase.auth.signOut();
         throw new Error("Este usuario no pertenece al portal admin.");
       }
@@ -209,7 +213,7 @@ Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por
         throw new Error("Este usuario no pertenece al portal alumno.");
       }
 
-      if (profile.role === "admin") {
+      if (profile.role === "admin" || profile.role === "moderator") {
         navigate("/admin");
         return;
       }
