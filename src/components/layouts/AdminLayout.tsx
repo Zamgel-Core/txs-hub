@@ -16,6 +16,7 @@ import {
   Users,
   X,
   QrCode,
+  ClipboardCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -66,6 +67,7 @@ export function AdminLayout() {
             icon: CalendarCheck,
           },
           { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
+          { name: "Evaluaciones", path: "/admin/evaluaciones", icon: ClipboardCheck },
           { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
           { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
           { name: "Eventos", path: "/admin/eventos", icon: Calendar },
@@ -82,6 +84,7 @@ export function AdminLayout() {
             path: "/admin/asistencia",
             icon: CalendarCheck,
           },
+          { name: "Evaluaciones", path: "/admin/evaluaciones", icon: ClipboardCheck },
           { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
           { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
           { name: "Eventos", path: "/admin/eventos", icon: Calendar },

@@ -23,12 +23,14 @@ import { Eventos } from "@/src/pages/admin/Eventos";
 import { Reportes } from "@/src/pages/admin/Reportes";
 import { Configuracion } from "@/src/pages/admin/Configuracion";
 import { Mensajes } from "@/src/pages/admin/Mensajes";
+import { Evaluaciones } from "@/src/pages/admin/Evaluaciones";
 
 import { AlumnoDashboard } from "@/src/pages/alumno/AlumnoDashboard";
 import { AlumnoEventos } from "@/src/pages/alumno/AlumnoEventos";
 import { AlumnoPagos } from "@/src/pages/alumno/AlumnoPagos";
 import { AlumnoSoporte } from "@/src/pages/alumno/AlumnoSoporte";
 import { AlumnoAvisos } from "@/src/pages/alumno/AlumnoAvisos";
+import { AlumnoProgreso } from "@/src/pages/alumno/AlumnoProgreso";
 
 import { Academia } from "@/src/pages/public/Academia";
 import { AcademiaInscripcion } from "@/src/pages/public/AcademiaInscripcion";
@@ -95,6 +97,7 @@ export default function App() {
           />
 
           <Route path="asistencia" element={<Asistencia />} />
+          <Route path="evaluaciones" element={<Evaluaciones />} />
           <Route path="escaner" element={<EscanerQR />} />
           <Route path="mensajes" element={<Mensajes />} />
           <Route path="avisos" element={<Avisos />} />
@@ -123,6 +126,7 @@ export default function App() {
         >
           <Route index element={<AlumnoDashboard />} />
           <Route path="avisos" element={<AlumnoAvisos />} />
+          <Route path="progreso" element={<AlumnoProgreso />} />
           <Route path="eventos" element={<AlumnoEventos />} />
           <Route path="pagos" element={<AlumnoPagos />} />
           <Route path="soporte" element={<AlumnoSoporte />} />

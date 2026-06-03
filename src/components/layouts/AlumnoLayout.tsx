@@ -7,6 +7,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  TrendingUp,
   UserCircle,
   X,
 } from "lucide-react";
@@ -176,6 +177,7 @@ export function AlumnoLayout() {
       badge: unreadAnnouncements,
     },
     { name: "Clases y Eventos", path: "/alumno/eventos", icon: Calendar },
+    { name: "Mi Progreso", path: "/alumno/progreso", icon: TrendingUp },
     { name: "Historial de Pagos", path: "/alumno/pagos", icon: CreditCard },
     { name: "Soporte", path: "/alumno/soporte", icon: MessageSquare },
   ];
