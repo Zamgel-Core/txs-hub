@@ -35,6 +35,10 @@ interface Student {
   last_payment_date?: string | null;
   payment_notes?: string | null;
   qr_token?: string | null;
+  annual_fee_status?: string | null;
+  annual_fee_paid_at?: string | null;
+  annual_fee_expires_at?: string | null;
+  annual_fee_amount?: number | null;
 }
 
 interface Group {
@@ -131,6 +135,44 @@ function getMembershipLabel(status?: string | null) {
   return "Vencida";
 }
 
+function getAnnualFeeLabel(status?: string | null) {
+  const normalized = String(status || "pending").toLowerCase();
+
+  if (normalized === "active") return "Activa";
+  if (normalized === "expired") return "Vencida";
+
+  return "Pendiente";
+}
+
+function getAnnualFeeBadge(status?: string | null) {
+  const normalized = String(status || "pending").toLowerCase();
+
+  if (normalized === "active") {
+    return "bg-emerald-500/20 text-emerald-400 border-emerald-500/20";
+  }
+
+  if (normalized === "expired") {
+    return "bg-red-500/20 text-red-400 border-red-500/20";
+  }
+
+  return "bg-yellow-500/15 text-yellow-300 border-yellow-500/20";
+}
+
+function getCurrentYearEndDate() {
+  const year = new Date().getFullYear();
+  return `${year}-12-31`;
+}
+
+function getStudentGeneralStatus(student: Student) {
+  const membershipActive =
+    String(student.membership_status || "").toLowerCase() === "activa";
+
+  const annualActive =
+    String(student.annual_fee_status || "pending").toLowerCase() === "active";
+
+  return Boolean(student.is_active && membershipActive && annualActive);
+}
+
 export function Alumnos() {
   const [students, setStudents] = useState<Student[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -142,6 +184,7 @@ export function Alumnos() {
 
   const [search, setSearch] = useState("");
   const [selectedGroupFilter, setSelectedGroupFilter] = useState("all");
+  const [annualFeeFilter, setAnnualFeeFilter] = useState("all");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
@@ -218,9 +261,15 @@ export function Alumnos() {
           ? true
           : student.group_id === selectedGroupFilter;
 
-      return matchesSearch && matchesGroup;
+      const matchesAnnualFee =
+        annualFeeFilter === "all"
+          ? true
+          : String(student.annual_fee_status || "pending").toLowerCase() ===
+            annualFeeFilter;
+
+      return matchesSearch && matchesGroup && matchesAnnualFee;
     });
-  }, [students, search, selectedGroupFilter]);
+  }, [students, search, selectedGroupFilter, annualFeeFilter]);
 
   function getGroupInfo(groupId?: string | null) {
     if (!groupId) {
@@ -397,6 +446,56 @@ export function Alumnos() {
       setSaving(false);
     }
   }
+  async function handleRegisterAnnualFee(student: Student) {
+    const confirmed = window.confirm(
+      `¿Registrar anualidad de $150 para ${student.full_name}?`,
+    );
+
+    if (!confirmed) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const expiresAt = getCurrentYearEndDate();
+
+    try {
+      const { error: studentError } = await supabase
+        .from("students")
+        .update({
+          annual_fee_status: "active",
+          annual_fee_paid_at: today,
+          annual_fee_expires_at: expiresAt,
+          annual_fee_amount: 150,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", student.id);
+
+      if (studentError) {
+        console.error(studentError);
+        alert("No se pudo actualizar la anualidad.");
+        return;
+      }
+
+      const { error: paymentError } = await supabase.from("payments").insert({
+        student_id: student.id,
+        payment_date: today,
+        concept: "annual_fee",
+        method: "Efectivo",
+        amount: 150,
+        status: "paid",
+        notes: `Anualidad ${new Date().getFullYear()} TXS. Vence ${expiresAt}.`,
+      });
+
+      if (paymentError) {
+        console.error(paymentError);
+        alert("Anualidad actualizada, pero no se pudo guardar el pago.");
+      }
+
+      await loadStudents();
+      alert("Anualidad registrada correctamente.");
+    } catch (err) {
+      console.error(err);
+      alert("Ocurrió un error registrando la anualidad.");
+    }
+  }
 
   async function handleDownloadCredential(student: Student) {
     const groupInfo = getGroupInfo(student.group_id);
@@ -442,7 +541,7 @@ export function Alumnos() {
       </div>
 
       <div className="w-full max-w-[1600px] mx-auto bg-[#090909] border border-yellow-500/20 rounded-3xl overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-zinc-900 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
+        <div className="p-4 sm:p-5 border-b border-zinc-900 grid grid-cols-1 lg:grid-cols-[1fr_300px_260px] gap-4">
           <div className="relative">
             <Search
               className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500"
@@ -471,39 +570,45 @@ export function Alumnos() {
               </option>
             ))}
           </select>
+
+          <select
+            value={annualFeeFilter}
+            onChange={(e) => setAnnualFeeFilter(e.target.value)}
+            className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+          >
+            <option value="all">Todas las anualidades</option>
+            <option value="pending">Pendientes</option>
+            <option value="active">Activas</option>
+            <option value="expired">Vencidas</option>
+          </select>
         </div>
 
         <div className="hidden xl:block overflow-hidden">
           <table className="w-full table-fixed text-sm">
             <colgroup>
-              <col className="w-[17%]" />
-              <col className="w-[10%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
               <col className="w-[18%]" />
-              <col className="w-[13%]" />
-              <col className="w-[10%]" />
               <col className="w-[14%]" />
-              <col className="w-[8%]" />
-              <col className="w-[5%]" />
-              <col className="w-[5%]" />
+              <col className="w-[14%]" />
+              <col className="w-[14%]" />
             </colgroup>
+
             <thead className="bg-[#0d0d0d]">
               <tr className="text-left text-zinc-500 text-sm">
-                <th className="px-3 py-4">Nombre</th>
-                <th className="px-3 py-4">Teléfono</th>
-                <th className="px-3 py-4">Correo</th>
-                <th className="px-3 py-4">Grupo</th>
-                <th className="px-3 py-4">Horario</th>
+                <th className="px-3 py-4">Alumno</th>
+                <th className="px-3 py-4">Contacto</th>
+                <th className="px-3 py-4">Grupo / Horario</th>
                 <th className="px-3 py-4">Membresía</th>
-                <th className="px-3 py-4">Estado</th>
-                <th className="px-3 py-4">Password</th>
-                <th className="px-3 py-4 text-center">Acciones</th>
+                <th className="px-3 py-4">Anualidad</th>
+                <th className="px-3 py-4">Estado / Acciones</th>
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-20 text-zinc-500">
+                  <td colSpan={6} className="text-center py-20 text-zinc-500">
                     Cargando alumnos...
                   </td>
                 </tr>
@@ -516,8 +621,8 @@ export function Alumnos() {
                       key={student.id}
                       className="border-t border-zinc-900 hover:bg-[#0d0d0d] transition-all"
                     >
-                      <td className="px-3 py-5">
-                        <div className="flex items-center gap-4">
+                      <td className="px-3 py-5 align-top">
+                        <div className="flex items-start gap-4">
                           <div className="w-11 h-11 rounded-full bg-zinc-800 flex items-center justify-center font-bold shrink-0">
                             {student.full_name.charAt(0)}
                           </div>
@@ -534,30 +639,36 @@ export function Alumnos() {
                         </div>
                       </td>
 
-                      <td className="px-3 py-5 text-zinc-300 truncate">
-                        {student.phone}
-                      </td>
-
-                      <td className="px-3 py-5 text-zinc-300 truncate">
-                        {student.email}
-                      </td>
-
-                      <td className="px-3 py-5">
-                        <span className="inline-block max-w-full truncate bg-zinc-800 text-zinc-200 px-2 py-1 rounded-full text-xs">
-                          {groupInfo.name}
-                        </span>
-                      </td>
-
-                      <td className="px-3 py-5 text-zinc-500">
-                        <p>{groupInfo.schedule}</p>
-                        {groupInfo.days && (
-                          <p className="text-xs text-zinc-600 mt-1">
-                            {groupInfo.days}
+                      <td className="px-3 py-5 align-top">
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-zinc-300 truncate">
+                            {student.email}
                           </p>
-                        )}
+
+                          <p className="text-xs text-zinc-500">
+                            {student.phone || "Sin teléfono"}
+                          </p>
+
+                          <p className="text-xs font-semibold text-yellow-400 truncate">
+                            Pass: {student.temporary_password || "—"}
+                          </p>
+                        </div>
                       </td>
 
-                      <td className="px-3 py-5">
+                      <td className="px-3 py-5 align-top">
+                        <div className="min-w-0 space-y-2">
+                          <span className="inline-block max-w-full truncate bg-zinc-800 text-zinc-200 px-2 py-1 rounded-full text-xs">
+                            {groupInfo.name}
+                          </span>
+
+                          <div className="text-xs text-zinc-500 leading-relaxed">
+                            <p>{groupInfo.schedule}</p>
+                            {groupInfo.days && <p>{groupInfo.days}</p>}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-5 align-top">
                         <div className="space-y-1">
                           <span
                             className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-bold ${getMembershipBadge(
@@ -578,41 +689,72 @@ export function Alumnos() {
                         </div>
                       </td>
 
-                      <td className="px-3 py-5">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                            student.is_active
-                              ? "bg-emerald-500/20 text-emerald-400"
-                              : "bg-red-500/20 text-red-400"
-                          }`}
-                        >
-                          {student.is_active ? "Activo" : "Inactivo"}
-                        </span>
+                      <td className="px-3 py-5 align-top">
+                        <div className="space-y-1">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-bold ${getAnnualFeeBadge(
+                              student.annual_fee_status,
+                            )}`}
+                          >
+                            {getAnnualFeeLabel(student.annual_fee_status)}
+                          </span>
+
+                          <p className="text-xs text-zinc-300">
+                            $
+                            {Number(student.annual_fee_amount || 150).toFixed(
+                              2,
+                            )}
+                          </p>
+
+                          <p className="text-xs text-zinc-500">
+                            Vence:{" "}
+                            {formatDateLocal(student.annual_fee_expires_at)}
+                          </p>
+                        </div>
                       </td>
 
-                      <td className="px-3 py-5 text-yellow-400 font-semibold truncate">
-                        {student.temporary_password || "—"}
-                      </td>
-
-                      <td className="px-3 py-5 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleDownloadCredential(student)}
-                            title="Descargar credencial"
-                            aria-label="Descargar credencial"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black transition-all"
+                      <td className="px-3 py-5 align-top">
+                        <div className="flex flex-col gap-2">
+                          <span
+                            className={`inline-flex w-fit px-2 py-1 rounded-full text-xs font-semibold ${
+                              getStudentGeneralStatus(student)
+                                ? "bg-emerald-500/20 text-emerald-400"
+                                : "bg-red-500/20 text-red-400"
+                            }`}
                           >
-                            <IdCard size={16} />
-                          </button>
+                            {getStudentGeneralStatus(student)
+                              ? "Activo"
+                              : "Inactivo"}
+                          </span>
 
-                          <button
-                            onClick={() => openEditModal(student)}
-                            title="Editar alumno"
-                            aria-label="Editar alumno"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-700 text-zinc-300 hover:border-yellow-500/40 hover:text-yellow-400 transition-all"
-                          >
-                            <Edit size={16} />
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() => handleDownloadCredential(student)}
+                              title="Descargar credencial"
+                              aria-label="Descargar credencial"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black transition-all"
+                            >
+                              <IdCard size={15} />
+                            </button>
+
+                            <button
+                              onClick={() => handleRegisterAnnualFee(student)}
+                              title="Registrar anualidad"
+                              aria-label="Registrar anualidad"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all"
+                            >
+                              <CreditCard size={15} />
+                            </button>
+
+                            <button
+                              onClick={() => openEditModal(student)}
+                              title="Editar alumno"
+                              aria-label="Editar alumno"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-700 text-zinc-300 hover:border-yellow-500/40 hover:text-yellow-400 transition-all"
+                            >
+                              <Edit size={15} />
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -622,7 +764,7 @@ export function Alumnos() {
 
               {!loading && filteredStudents.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-20 text-zinc-500">
+                  <td colSpan={6} className="text-center py-20 text-zinc-500">
                     No se encontraron alumnos.
                   </td>
                 </tr>
@@ -665,12 +807,12 @@ export function Alumnos() {
 
                     <span
                       className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
-                        student.is_active
+                        getStudentGeneralStatus(student)
                           ? "bg-emerald-500/20 text-emerald-400"
                           : "bg-red-500/20 text-red-400"
                       }`}
                     >
-                      {student.is_active ? "Activo" : "Inactivo"}
+                      {getStudentGeneralStatus(student) ? "Activo" : "Inactivo"}
                     </span>
                   </div>
 
@@ -733,15 +875,54 @@ export function Alumnos() {
                         Vence: {formatDateLocal(student.membership_end_date)}
                       </p>
                     </div>
+
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-zinc-500 text-xs mb-1">
+                            Anualidad
+                          </p>
+                          <p className="text-zinc-200 font-semibold">
+                            $
+                            {Number(student.annual_fee_amount || 150).toFixed(
+                              2,
+                            )}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${getAnnualFeeBadge(
+                            student.annual_fee_status,
+                          )}`}
+                        >
+                          {getAnnualFeeLabel(student.annual_fee_status)}
+                        </span>
+                      </div>
+
+                      <p className="text-zinc-500 text-xs mt-2">
+                        Pagada: {formatDateLocal(student.annual_fee_paid_at)}
+                      </p>
+                      <p className="text-zinc-500 text-xs">
+                        Vence: {formatDateLocal(student.annual_fee_expires_at)}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       onClick={() => handleDownloadCredential(student)}
                       className="w-full h-11 rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
                     >
                       <IdCard size={16} />
                       Credencial PDF
+                    </button>
+
+                    <button
+                      onClick={() => handleRegisterAnnualFee(student)}
+                      className="w-full h-11 rounded-xl border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
+                    >
+                      <CreditCard size={16} />
+                      Anualidad
                     </button>
 
                     <button

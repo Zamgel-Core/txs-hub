@@ -43,6 +43,10 @@ type Student = {
   membership_end_date: string | null;
   last_payment_date: string | null;
   payment_notes: string | null;
+  annual_fee_status: "active" | "pending" | "expired" | null;
+  annual_fee_paid_at: string | null;
+  annual_fee_expires_at: string | null;
+  annual_fee_amount: number | null;
 };
 
 type Group = {
@@ -98,6 +102,39 @@ function getMembershipBadge(status: Student["membership_status"]) {
   }
 
   return <Badge variant="danger">Vencida</Badge>;
+}
+
+function getAnnualFeeLabel(status: Student["annual_fee_status"]) {
+  if (status === "active") return "Anualidad Activa";
+  if (status === "expired") return "Anualidad Vencida";
+  return "Anualidad Pendiente";
+}
+
+function getAnnualFeeShortLabel(status: Student["annual_fee_status"]) {
+  if (status === "active") return "Activa";
+  if (status === "expired") return "Vencida";
+  return "Pendiente";
+}
+
+function getAnnualFeeBadge(status: Student["annual_fee_status"]) {
+  if (status === "active") {
+    return <Badge variant="success">Anualidad Activa</Badge>;
+  }
+
+  if (status === "expired") {
+    return <Badge variant="danger">Anualidad Vencida</Badge>;
+  }
+
+  return <Badge variant="warning">Anualidad Pendiente</Badge>;
+}
+
+function getAnnualFeeDisplayAmount(amount: number | null) {
+  const safeAmount = typeof amount === "number" ? amount : 150;
+
+  return safeAmount.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  });
 }
 
 function getAttendanceBadge(status: AttendanceRecord["status"]) {
@@ -461,13 +498,23 @@ export function AlumnoDashboard() {
 
         <Card className="bg-txs-card border-zinc-800/80 hover:border-gold-500/20 transition-colors">
           <CardContent className="p-6">
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-zinc-800">
-              <CreditCard className="h-5 w-5 text-zinc-300" />
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gold-500/10">
+                <CreditCard className="h-5 w-5 text-gold-500" />
+              </div>
+              {getAnnualFeeBadge(alumno.annual_fee_status)}
             </div>
 
-            <p className="text-sm text-zinc-500">Tipo de membresía</p>
-            <p className="mt-1 text-xl font-display font-bold text-white capitalize">
-              {alumno.membership_type || "Pendiente"}
+            <p className="text-sm text-zinc-500">Anualidad TXS</p>
+            <p className="mt-1 text-xl font-display font-bold text-white">
+              {getAnnualFeeShortLabel(alumno.annual_fee_status)}
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {alumno.annual_fee_status === "active"
+                ? `Vence: ${formatDate(alumno.annual_fee_expires_at)}`
+                : `Monto: ${getAnnualFeeDisplayAmount(
+                    alumno.annual_fee_amount,
+                  )}`}
             </p>
           </CardContent>
         </Card>
@@ -521,6 +568,7 @@ export function AlumnoDashboard() {
                   <div className="min-w-0 flex-1">
                     <div className="mb-3 flex flex-wrap gap-2">
                       {getMembershipBadge(alumno.membership_status)}
+                      {getAnnualFeeBadge(alumno.annual_fee_status)}
                       <Badge variant="default">Grupo asignado</Badge>
                     </div>
 
@@ -709,6 +757,42 @@ export function AlumnoDashboard() {
                     {group.days} • {group.schedule}
                   </p>
                 )}
+              </div>
+
+              <div className="rounded-xl border border-gold-500/20 bg-gold-500/10 p-4 md:col-span-2">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-zinc-400">Anualidad TXS</p>
+                  {getAnnualFeeBadge(alumno.annual_fee_status)}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Estado
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {getAnnualFeeShortLabel(alumno.annual_fee_status)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Monto
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {getAnnualFeeDisplayAmount(alumno.annual_fee_amount)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Vence
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {formatDate(alumno.annual_fee_expires_at)}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
