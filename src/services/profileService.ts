@@ -24,6 +24,7 @@ export type StudentSummary = {
   membership_type: string | null;
   membership_start_date: string | null;
   membership_end_date: string | null;
+  qr_token: string | null;
 };
 
 export type ExtendedProfile = {
@@ -114,7 +115,7 @@ export async function getMyProfileBundle(): Promise<ProfileBundle> {
     const { data: studentData, error: studentError } = await supabase
       .from("students")
       .select(
-        "id, full_name, email, phone, group_level, membership_status, membership_type, membership_start_date, membership_end_date",
+        "id, full_name, email, phone, group_level, membership_status, membership_type, membership_start_date, membership_end_date, qr_token",
       )
       .ilike("email", profileEmail)
       .maybeSingle();
@@ -142,7 +143,10 @@ export async function getMyProfileBundle(): Promise<ProfileBundle> {
     baseProfile: (baseProfile as BaseProfile | null) || null,
     student,
     extendedProfile: extendedData
-      ? ({ ...fallback, ...(extendedData as ExtendedProfile) } as ExtendedProfile)
+      ? ({
+          ...fallback,
+          ...(extendedData as ExtendedProfile),
+        } as ExtendedProfile)
       : fallback,
   };
 }

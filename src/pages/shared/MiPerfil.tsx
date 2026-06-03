@@ -151,8 +151,10 @@ export function MiPerfil({ mode }: MiPerfilProps) {
   const avatarUrl =
     extended?.profile_photo_url || baseProfile?.avatar_url || null;
   const qrValue =
-    extended?.qr_code_value ||
-    `TXS-${mode.toUpperCase()}:${baseProfile?.id || "perfil"}`;
+    mode === "alumno" && student?.qr_token
+      ? `${window.location.origin}/admin/escaner?token=${student.qr_token}`
+      : extended?.qr_code_value ||
+        `TXS-${mode.toUpperCase()}:${baseProfile?.id || "perfil"}`;
 
   const profileCompletion = useMemo(() => {
     if (!extended) return 0;
