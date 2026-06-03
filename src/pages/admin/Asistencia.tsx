@@ -14,6 +14,8 @@ import {
 import { Button } from "@/src/components/ui/Button";
 import { Card, CardContent } from "@/src/components/ui/Card";
 import { supabase } from "@/src/lib/supabase";
+import { useNavigate } from "react-router-dom";
+import { QrCode } from "lucide-react";
 import {
   AttendanceGroup,
   AttendanceStatus,
@@ -103,6 +105,8 @@ function AttendanceButtons({
 }
 
 export function Asistencia() {
+  const navigate = useNavigate();
+
   const [groups, setGroups] = useState<AttendanceGroup[]>([]);
   const [students, setStudents] = useState<AttendanceStudent[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -191,28 +195,28 @@ export function Asistencia() {
   }, [loadAttendanceData]);
 
   useEffect(() => {
-  if (!selectedGroup) return;
+    if (!selectedGroup) return;
 
-  const channel = supabase
-    .channel(`admin-attendance-realtime-${selectedGroup}-${selectedDate}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "attendance",
-        filter: `group_id=eq.${selectedGroup}`,
-      },
-      () => {
-        loadAttendanceData();
-      },
-    )
-    .subscribe();
+    const channel = supabase
+      .channel(`admin-attendance-realtime-${selectedGroup}-${selectedDate}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "attendance",
+          filter: `group_id=eq.${selectedGroup}`,
+        },
+        () => {
+          loadAttendanceData();
+        },
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [loadAttendanceData, selectedDate, selectedGroup]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadAttendanceData, selectedDate, selectedGroup]);
 
   function handleMarkAttendance(studentId: string, status: AttendanceStatus) {
     setAttendance((prev) => ({
@@ -280,13 +284,26 @@ export function Asistencia() {
     <div className="space-y-7 pb-10">
       <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-white">
-            Asistencia
-          </h1>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight text-white">
+                Asistencia
+              </h1>
 
-          <p className="mt-2 text-zinc-500">
-            Control real de asistencia por grupo y fecha.
-          </p>
+              <p className="mt-2 text-zinc-500">
+                Control real de asistencia por grupo y fecha.
+              </p>
+            </div>
+
+            <Button
+              onClick={() => navigate("/admin/escaner")}
+              variant="gold"
+              className="h-11 gap-2 px-5"
+            >
+              <QrCode className="h-4 w-4" />
+              Escáner QR
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

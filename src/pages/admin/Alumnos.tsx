@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { generateStudentCredentialPdf } from "@/src/services/credentialService";
 import {
   CalendarDays,
   CreditCard,
@@ -15,6 +16,7 @@ import {
   Search,
   Users,
   X,
+  IdCard,
 } from "lucide-react";
 
 interface Student {
@@ -32,6 +34,7 @@ interface Student {
   membership_end_date?: string | null;
   last_payment_date?: string | null;
   payment_notes?: string | null;
+  qr_token?: string | null;
 }
 
 interface Group {
@@ -395,6 +398,17 @@ export function Alumnos() {
     }
   }
 
+  async function handleDownloadCredential(student: Student) {
+    const groupInfo = getGroupInfo(student.group_id);
+    const planName = getPlanName(student.membership_type);
+
+    await generateStudentCredentialPdf({
+      student,
+      groupInfo,
+      planName,
+    });
+  }
+
   return (
     <div className="min-h-screen bg-black text-white px-3 sm:px-5 lg:px-6 2xl:px-10 py-6 lg:py-8">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5 mb-8">
@@ -482,7 +496,7 @@ export function Alumnos() {
                 <th className="px-3 py-4">Membresía</th>
                 <th className="px-3 py-4">Estado</th>
                 <th className="px-3 py-4">Password</th>
-                <th className="px-3 py-4 text-center">Editar</th>
+                <th className="px-3 py-4 text-center">Acciones</th>
               </tr>
             </thead>
 
@@ -581,14 +595,25 @@ export function Alumnos() {
                       </td>
 
                       <td className="px-3 py-5 text-center">
-                        <button
-                          onClick={() => openEditModal(student)}
-                          title="Editar alumno"
-                          aria-label="Editar alumno"
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black transition-all"
-                        >
-                          <Edit size={16} />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleDownloadCredential(student)}
+                            title="Descargar credencial"
+                            aria-label="Descargar credencial"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black transition-all"
+                          >
+                            <IdCard size={16} />
+                          </button>
+
+                          <button
+                            onClick={() => openEditModal(student)}
+                            title="Editar alumno"
+                            aria-label="Editar alumno"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-700 text-zinc-300 hover:border-yellow-500/40 hover:text-yellow-400 transition-all"
+                          >
+                            <Edit size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -710,13 +735,23 @@ export function Alumnos() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => openEditModal(student)}
-                    className="w-full h-11 rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
-                  >
-                    <Edit size={16} />
-                    Editar alumno
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleDownloadCredential(student)}
+                      className="w-full h-11 rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
+                    >
+                      <IdCard size={16} />
+                      Credencial PDF
+                    </button>
+
+                    <button
+                      onClick={() => openEditModal(student)}
+                      className="w-full h-11 rounded-xl border border-zinc-700 text-zinc-300 hover:border-yellow-500/40 hover:text-yellow-400 font-bold flex items-center justify-center gap-2 transition-all"
+                    >
+                      <Edit size={16} />
+                      Editar alumno
+                    </button>
+                  </div>
                 </div>
               );
             })

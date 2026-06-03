@@ -40,6 +40,8 @@ import { MiPerfil } from "@/src/pages/shared/MiPerfil";
 
 import { NotFound } from "@/src/pages/NotFound";
 
+import { EscanerQR } from "@/src/pages/admin/EscanerQR";
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -93,6 +95,7 @@ export default function App() {
           />
 
           <Route path="asistencia" element={<Asistencia />} />
+          <Route path="escaner" element={<EscanerQR />} />
           <Route path="mensajes" element={<Mensajes />} />
           <Route path="avisos" element={<Avisos />} />
           <Route path="eventos" element={<Eventos />} />

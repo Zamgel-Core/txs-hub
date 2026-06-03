@@ -15,6 +15,7 @@ import {
   UserCircle,
   Users,
   X,
+  QrCode,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -64,6 +65,7 @@ export function AdminLayout() {
             path: "/admin/asistencia",
             icon: CalendarCheck,
           },
+          { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
           { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
           { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
           { name: "Eventos", path: "/admin/eventos", icon: Calendar },
