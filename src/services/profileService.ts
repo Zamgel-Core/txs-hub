@@ -25,6 +25,7 @@ export type StudentSummary = {
   membership_start_date: string | null;
   membership_end_date: string | null;
   qr_token: string | null;
+  birth_date: string | null;
 };
 
 export type ExtendedProfile = {
@@ -115,7 +116,7 @@ export async function getMyProfileBundle(): Promise<ProfileBundle> {
     const { data: studentData, error: studentError } = await supabase
       .from("students")
       .select(
-        "id, full_name, email, phone, group_level, membership_status, membership_type, membership_start_date, membership_end_date, qr_token",
+        "id, full_name, email, phone, group_level, membership_status, membership_type, membership_start_date, membership_end_date, qr_token, birth_date",
       )
       .ilike("email", profileEmail)
       .maybeSingle();
@@ -138,16 +139,24 @@ export async function getMyProfileBundle(): Promise<ProfileBundle> {
     role: baseProfile?.role || null,
   });
 
+  const mergedExtendedProfile = extendedData
+    ? ({
+        ...fallback,
+        ...(extendedData as ExtendedProfile),
+        student_id: (extendedData as ExtendedProfile).student_id || student?.id || null,
+        birth_date:
+          (extendedData as ExtendedProfile).birth_date || student?.birth_date || null,
+      } as ExtendedProfile)
+    : {
+        ...fallback,
+        birth_date: student?.birth_date || null,
+      };
+
   return {
     authUserId: user.id,
     baseProfile: (baseProfile as BaseProfile | null) || null,
     student,
-    extendedProfile: extendedData
-      ? ({
-          ...fallback,
-          ...(extendedData as ExtendedProfile),
-        } as ExtendedProfile)
-      : fallback,
+    extendedProfile: mergedExtendedProfile,
   };
 }
 
@@ -168,7 +177,23 @@ export async function saveMyExtendedProfile(
     .single();
 
   if (error) throw error;
-  return data as ExtendedProfile;
+
+  if (payload.student_id) {
+    const { error: studentError } = await supabase
+      .from("students")
+      .update({
+        birth_date: payload.birth_date || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payload.student_id);
+
+    if (studentError) throw studentError;
+  }
+
+  return {
+    ...(data as ExtendedProfile),
+    student_id: payload.student_id,
+  };
 }
 
 export async function updateMyBaseProfile(params: {

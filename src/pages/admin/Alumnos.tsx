@@ -5,6 +5,7 @@ import { supabase } from "@/src/lib/supabase";
 import { generateStudentCredentialPdf } from "@/src/services/credentialService";
 import {
   CalendarDays,
+  Cake,
   CreditCard,
   Edit,
   Eye,
@@ -39,6 +40,7 @@ interface Student {
   annual_fee_paid_at?: string | null;
   annual_fee_expires_at?: string | null;
   annual_fee_amount?: number | null;
+  birth_date?: string | null;
 }
 
 interface Group {
@@ -76,6 +78,7 @@ const emptyForm = {
   membership_end_date: "",
   last_payment_date: "",
   payment_notes: "",
+  birth_date: "",
 };
 
 function formatDateLocal(date?: string | null) {
@@ -333,6 +336,7 @@ export function Alumnos() {
       membership_end_date: normalizeDateInput(student.membership_end_date),
       last_payment_date: normalizeDateInput(student.last_payment_date),
       payment_notes: student.payment_notes || "",
+      birth_date: normalizeDateInput(student.birth_date),
     });
 
     setIsModalOpen(true);
@@ -382,6 +386,20 @@ export function Alumnos() {
 
       console.log(data);
 
+      if (form.birth_date) {
+        const { error: birthDateError } = await supabase
+          .from("students")
+          .update({ birth_date: form.birth_date })
+          .eq("email", form.email);
+
+        if (birthDateError) {
+          console.error(birthDateError);
+          alert(
+            "Alumno creado, pero no se pudo guardar la fecha de nacimiento.",
+          );
+        }
+      }
+
       await loadStudents();
 
       setForm(emptyForm);
@@ -423,6 +441,7 @@ export function Alumnos() {
           membership_end_date: form.membership_end_date || null,
           last_payment_date: form.last_payment_date || null,
           payment_notes: form.payment_notes || null,
+          birth_date: form.birth_date || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", form.id);
@@ -647,6 +666,10 @@ export function Alumnos() {
 
                           <p className="text-xs text-zinc-500">
                             {student.phone || "Sin teléfono"}
+                          </p>
+
+                          <p className="text-xs text-zinc-500">
+                            Cumpleaños: {formatDateLocal(student.birth_date)}
                           </p>
 
                           <p className="text-xs font-semibold text-yellow-400 truncate">
@@ -1030,6 +1053,25 @@ export function Alumnos() {
                       className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 flex items-center gap-2">
+                    <Cake className="h-4 w-4" />
+                    Fecha de nacimiento
+                  </label>
+
+                  <input
+                    type="date"
+                    value={form.birth_date}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        birth_date: e.target.value,
+                      })
+                    }
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                  />
                 </div>
 
                 <div>
