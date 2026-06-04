@@ -67,7 +67,11 @@ export function AdminLayout() {
             icon: CalendarCheck,
           },
           { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
-          { name: "Evaluaciones", path: "/admin/evaluaciones", icon: ClipboardCheck },
+          {
+            name: "Evaluaciones",
+            path: "/admin/evaluaciones",
+            icon: ClipboardCheck,
+          },
           { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
           { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
           { name: "Eventos", path: "/admin/eventos", icon: Calendar },
@@ -84,7 +88,11 @@ export function AdminLayout() {
             path: "/admin/asistencia",
             icon: CalendarCheck,
           },
-          { name: "Evaluaciones", path: "/admin/evaluaciones", icon: ClipboardCheck },
+          {
+            name: "Evaluaciones",
+            path: "/admin/evaluaciones",
+            icon: ClipboardCheck,
+          },
           { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
           { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
           { name: "Eventos", path: "/admin/eventos", icon: Calendar },
@@ -219,16 +227,22 @@ export function AdminLayout() {
           </div>
 
           <div className="mt-10 pt-6 border-t border-zinc-800/60 text-center">
-            <div className="inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-orange-400 transition-colors">
+            <a
+              href="https://zamgelcore.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-orange-400 transition-colors"
+            >
               <img
                 src="/branding/zamgelcore-zc-logo.png"
                 alt="Zamgel Core"
-                className="h-5 w-auto opacity-70"
+                className="h-5 w-auto opacity-70 hover:opacity-100 transition-opacity"
               />
+
               <span>
-                Powered by <span className="font-semibold">Zamgel Core</span>
+                Powered by <span className="font-semibold">Zamgel Core</span> ↗
               </span>
-            </div>
+            </a>
           </div>
         </main>
       </div>
