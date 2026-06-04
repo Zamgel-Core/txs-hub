@@ -9,6 +9,8 @@ import {
   Clock3,
   Loader2,
   Phone,
+  PlusCircle,
+  Save,
   Shield,
   Trophy,
   User,
@@ -230,6 +232,9 @@ export function StudentDetailsModal({
     null,
   );
   const [txsHistory, setTXSHistory] = useState<TXSPointLedgerItem[]>([]);
+  const [adjustmentPoints, setAdjustmentPoints] = useState(1);
+  const [adjustmentReason, setAdjustmentReason] = useState("");
+  const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -286,6 +291,51 @@ export function StudentDetailsModal({
     }
 
     setLoading(false);
+  }
+
+  async function handleManualAdjustment() {
+    const points = Number(adjustmentPoints);
+    const reason = adjustmentReason.trim();
+
+    if (!Number.isFinite(points) || points === 0) {
+      alert("Ingresa una cantidad de puntos diferente de 0.");
+      return;
+    }
+
+    if (!reason) {
+      alert("Agrega un motivo para el ajuste de puntos.");
+      return;
+    }
+
+    try {
+      setSavingAdjustment(true);
+
+      const { error } = await supabase.from("student_points_ledger").insert({
+        student_id: student.id,
+        source_type: "manual_adjustment",
+        source_id: `manual:${student.id}:${Date.now()}`,
+        points,
+        reason,
+        metadata: {
+          origin: "admin_student_detail",
+          adjustment_type: points > 0 ? "positive" : "negative",
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setAdjustmentPoints(1);
+      setAdjustmentReason("");
+      await loadProfile();
+      alert("Ajuste de puntos guardado correctamente.");
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo guardar el ajuste de puntos.");
+    } finally {
+      setSavingAdjustment(false);
+    }
   }
 
   const birthDate = profile?.birth_date || student.birth_date;
@@ -471,6 +521,62 @@ export function StudentDetailsModal({
                       style={{ width: `${txsLevelPercent}%` }}
                     />
                   </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-black text-white">
+                    <PlusCircle className="h-4 w-4 text-yellow-400" />
+                    Ajuste manual de puntos
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[140px_1fr_auto] md:items-end">
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+                        Puntos
+                      </span>
+                      <input
+                        type="number"
+                        value={adjustmentPoints}
+                        onChange={(event) =>
+                          setAdjustmentPoints(Number(event.target.value))
+                        }
+                        className="h-11 w-full rounded-xl border border-zinc-800 bg-black px-3 text-sm font-bold text-white outline-none transition focus:border-yellow-400/60"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+                        Motivo
+                      </span>
+                      <input
+                        value={adjustmentReason}
+                        onChange={(event) =>
+                          setAdjustmentReason(event.target.value)
+                        }
+                        placeholder="Ej. Torneo interno, apoyo en clase, corrección administrativa"
+                        className="h-11 w-full rounded-xl border border-zinc-800 bg-black px-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-yellow-400/60"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={handleManualAdjustment}
+                      disabled={savingAdjustment}
+                      className="inline-flex h-11 items-center justify-center rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 text-sm font-black text-yellow-300 transition hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {savingAdjustment ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Guardar
+                    </button>
+                  </div>
+
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Usa valores positivos para sumar y negativos para corregir o
+                    restar puntos.
+                  </p>
                 </div>
 
                 <div className="mt-4">

@@ -9,6 +9,7 @@ import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { DashboardIncomeCards } from "@/src/components/dashboard/DashboardIncomeCards";
 import { DashboardRecentPayments } from "@/src/components/dashboard/DashboardRecentPayments";
 import { DashboardSummaryCards } from "@/src/components/dashboard/DashboardSummaryCards";
+import { DashboardTXSAlerts } from "@/src/components/dashboard/DashboardTXSAlerts";
 import { DashboardUpcomingExpirations } from "@/src/components/dashboard/DashboardUpcomingExpirations";
 import { useAdminDashboard } from "@/src/hooks/useAdminDashboard";
 import { supabase } from "@/src/lib/supabase";
@@ -452,6 +453,8 @@ export function AdminDashboard() {
 
         <DashboardUpcomingBirthdays />
       </div>
+
+      <DashboardTXSAlerts />
 
       <DashboardTXSProgress />
 

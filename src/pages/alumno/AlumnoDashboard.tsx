@@ -11,9 +11,11 @@ import {
   Lock,
   MapPin,
   Megaphone,
+  Trophy,
   User,
   UserCheck,
   Users,
+  Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -27,6 +29,10 @@ import {
   getStudentAnnouncements,
   markAnnouncementAsRead,
 } from "@/src/services/announcementsService";
+import {
+  getStudentProgress,
+  TXSProgressSummary,
+} from "@/src/services/txsProgressService";
 
 type Student = {
   id: string;
@@ -143,12 +149,34 @@ function getAttendanceBadge(status: AttendanceRecord["status"]) {
   return <Badge variant="danger">Falta</Badge>;
 }
 
+function getTXSLevelProgressPercent(progress: TXSProgressSummary | null) {
+  if (!progress) return 0;
+  if (!progress.next_level_min_points) return 100;
+
+  const currentLevelStart = Math.max(
+    progress.next_level_min_points - progress.points_to_next_level,
+    0,
+  );
+  const levelRange = progress.next_level_min_points - currentLevelStart;
+  const pointsInLevel = progress.total_points - currentLevelStart;
+
+  if (levelRange <= 0) return 0;
+
+  return Math.min(
+    100,
+    Math.max(0, Math.round((pointsInLevel / levelRange) * 100)),
+  );
+}
+
 export function AlumnoDashboard() {
   const [alumno, setAlumno] = useState<Student | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementWithRead[]>(
     [],
+  );
+  const [txsProgress, setTXSProgress] = useState<TXSProgressSummary | null>(
+    null,
   );
 
   const [loading, setLoading] = useState(true);
@@ -190,6 +218,16 @@ export function AlumnoDashboard() {
           schema: "public",
           table: "students",
           filter: `id=eq.${alumno.id}`,
+        },
+        refreshAlumno,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "student_points_ledger",
+          filter: `student_id=eq.${alumno.id}`,
         },
         refreshAlumno,
       )
@@ -262,6 +300,7 @@ export function AlumnoDashboard() {
       setAlumno(null);
       setGroup(null);
       setAnnouncements([]);
+      setTXSProgress(null);
       setLoading(false);
       return;
     }
@@ -277,11 +316,20 @@ export function AlumnoDashboard() {
       setAlumno(null);
       setGroup(null);
       setAnnouncements([]);
+      setTXSProgress(null);
       setLoading(false);
       return;
     }
 
     setAlumno(studentData as Student);
+
+    try {
+      const progressData = await getStudentProgress(studentData.id);
+      setTXSProgress(progressData);
+    } catch (progressError) {
+      console.error("Error cargando progreso TXS en dashboard:", progressError);
+      setTXSProgress(null);
+    }
 
     if (studentData.group_id) {
       const { data: groupData, error: groupError } = await supabase
@@ -396,6 +444,7 @@ export function AlumnoDashboard() {
   }, [announcements]);
 
   const latestAnnouncement = announcements[0] || null;
+  const txsLevelPercent = getTXSLevelProgressPercent(txsProgress);
 
   if (loading) {
     return (
@@ -464,6 +513,84 @@ export function AlumnoDashboard() {
             </Button>
           </div>
         </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="overflow-hidden border-gold-500/30 bg-gradient-to-br from-gold-500/12 via-txs-card to-black shadow-[0_0_35px_rgba(212,175,55,0.08)]">
+          <CardContent className="p-6 sm:p-7">
+            <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-gold-500/25 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-gold-400">
+                  <Trophy className="h-4 w-4" />
+                  Progreso TXS
+                </div>
+
+                <h2 className="text-2xl font-display font-bold text-white">
+                  {txsProgress?.current_level_name || "Nivel 1"}
+                </h2>
+
+                <p className="mt-1 text-sm text-zinc-500">
+                  {txsProgress?.badge_label || "Inicio TXS"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-gold-500/25 bg-black/35 px-5 py-4 text-center">
+                <p className="text-xs uppercase tracking-widest text-zinc-500">
+                  Puntos TXS
+                </p>
+                <p className="mt-1 text-3xl font-black text-gold-400">
+                  {txsProgress?.total_points ?? 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+              <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.18em]">
+                <span className="text-zinc-500">Avance al siguiente nivel</span>
+                <span className="text-gold-400">{txsLevelPercent}%</span>
+              </div>
+
+              <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className="h-full rounded-full bg-gold-400"
+                  style={{ width: `${txsLevelPercent}%` }}
+                />
+              </div>
+
+              <p className="mt-3 text-sm text-zinc-400">
+                {txsProgress?.next_level_name
+                  ? `Te faltan ${txsProgress.points_to_next_level} puntos para ${txsProgress.next_level_name}.`
+                  : "Ya estás en el nivel más alto de TXS."}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-gold-500/20 bg-txs-card">
+          <CardContent className="flex h-full flex-col justify-between gap-5 p-6 sm:p-7">
+            <div>
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gold-500/10">
+                <Zap className="h-6 w-6 text-gold-400" />
+              </div>
+
+              <h2 className="text-2xl font-display font-bold text-white">
+                Sigue acumulando puntos
+              </h2>
+
+              <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                Tus asistencias, evaluaciones, reconocimientos y anualidad
+                ayudan a construir tu progreso dentro de la academia.
+              </p>
+            </div>
+
+            <Link to="/alumno/progreso">
+              <Button variant="gold" className="w-full gap-2">
+                Ver mi progreso completo
+                <Trophy className="h-4 w-4" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </section>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
