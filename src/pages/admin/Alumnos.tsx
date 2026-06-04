@@ -41,6 +41,8 @@ interface Student {
   annual_fee_paid_at?: string | null;
   annual_fee_expires_at?: string | null;
   annual_fee_amount?: number | null;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
 }
 
 interface Group {
@@ -193,7 +195,9 @@ export function Alumnos() {
 
   const [form, setForm] = useState(emptyForm);
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
-  const [recognitionStudent, setRecognitionStudent] = useState<Student | null>(null);
+  const [recognitionStudent, setRecognitionStudent] = useState<Student | null>(
+    null,
+  );
 
   useEffect(() => {
     loadStudents();
@@ -236,6 +240,7 @@ export function Alumnos() {
     const { data, error } = await supabase
       .from("students")
       .select("*")
+      .eq("is_deleted", false)
       .order("full_name", { ascending: true });
 
     if (error) {
@@ -246,6 +251,33 @@ export function Alumnos() {
 
     setStudents(data || []);
     setLoading(false);
+  }
+
+  async function softDeleteStudent(student: Student) {
+    const confirmed = window.confirm(
+      `¿Eliminar a ${student.full_name}?\n\nEl alumno desaparecerá del sistema activo pero se conservará el historial.`,
+    );
+
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from("students")
+      .update({
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        is_active: false,
+      })
+      .eq("id", student.id);
+
+    if (error) {
+      console.error(error);
+      alert("No se pudo eliminar el alumno.");
+      return;
+    }
+
+    await loadStudents();
+
+    alert("Alumno eliminado correctamente.");
   }
 
   const filteredStudents = useMemo(() => {
@@ -743,6 +775,15 @@ export function Alumnos() {
                             </button>
 
                             <button
+                              onClick={() => handleDownloadCredential(student)}
+                              title="Descargar credencial"
+                              aria-label="Descargar credencial"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black transition-all"
+                            >
+                              <IdCard size={15} />
+                            </button>
+
+                            <button
                               onClick={() => handleRegisterAnnualFee(student)}
                               title="Registrar anualidad"
                               aria-label="Registrar anualidad"
@@ -752,21 +793,21 @@ export function Alumnos() {
                             </button>
 
                             <button
-                              onClick={() => setRecognitionStudent(student)}
-                              title="Otorgar reconocimiento"
-                              aria-label="Otorgar reconocimiento"
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black transition-all"
-                            >
-                              <Trophy size={15} />
-                            </button>
-
-                            <button
                               onClick={() => openEditModal(student)}
                               title="Editar alumno"
                               aria-label="Editar alumno"
                               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-700 text-zinc-300 hover:border-yellow-500/40 hover:text-yellow-400 transition-all"
                             >
                               <Edit size={15} />
+                            </button>
+
+                            <button
+                              onClick={() => softDeleteStudent(student)}
+                              title="Eliminar alumno"
+                              aria-label="Eliminar alumno"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white transition-all"
+                            >
+                              <X size={15} />
                             </button>
                           </div>
                         </div>
