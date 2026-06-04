@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { StudentRecognitionModal } from "@/src/components/admin/StudentRecognitionModal";
 import { generateStudentCredentialPdf } from "@/src/services/credentialService";
 import {
   CalendarDays,
-  Cake,
   CreditCard,
   Edit,
   Eye,
@@ -18,6 +18,7 @@ import {
   Users,
   X,
   IdCard,
+  Trophy,
 } from "lucide-react";
 
 interface Student {
@@ -40,7 +41,6 @@ interface Student {
   annual_fee_paid_at?: string | null;
   annual_fee_expires_at?: string | null;
   annual_fee_amount?: number | null;
-  birth_date?: string | null;
 }
 
 interface Group {
@@ -78,7 +78,6 @@ const emptyForm = {
   membership_end_date: "",
   last_payment_date: "",
   payment_notes: "",
-  birth_date: "",
 };
 
 function formatDateLocal(date?: string | null) {
@@ -194,6 +193,7 @@ export function Alumnos() {
 
   const [form, setForm] = useState(emptyForm);
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
+  const [recognitionStudent, setRecognitionStudent] = useState<Student | null>(null);
 
   useEffect(() => {
     loadStudents();
@@ -385,20 +385,6 @@ export function Alumnos() {
       }
 
       console.log(data);
-
-      if (form.birth_date) {
-        const { error: birthDateError } = await supabase
-          .from("students")
-          .update({ birth_date: form.birth_date })
-          .eq("email", form.email);
-
-        if (birthDateError) {
-          console.error(birthDateError);
-          alert(
-            "Alumno creado, pero no se pudo guardar la fecha de nacimiento.",
-          );
-        }
-      }
 
       await loadStudents();
 
@@ -668,10 +654,6 @@ export function Alumnos() {
                             {student.phone || "Sin teléfono"}
                           </p>
 
-                          <p className="text-xs text-zinc-500">
-                            Cumpleaños: {formatDateLocal(student.birth_date)}
-                          </p>
-
                           <p className="text-xs font-semibold text-yellow-400 truncate">
                             Pass: {student.temporary_password || "—"}
                           </p>
@@ -767,6 +749,15 @@ export function Alumnos() {
                               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all"
                             >
                               <CreditCard size={15} />
+                            </button>
+
+                            <button
+                              onClick={() => setRecognitionStudent(student)}
+                              title="Otorgar reconocimiento"
+                              aria-label="Otorgar reconocimiento"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black transition-all"
+                            >
+                              <Trophy size={15} />
                             </button>
 
                             <button
@@ -931,7 +922,7 @@ export function Alumnos() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <button
                       onClick={() => handleDownloadCredential(student)}
                       className="w-full h-11 rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
@@ -946,6 +937,14 @@ export function Alumnos() {
                     >
                       <CreditCard size={16} />
                       Anualidad
+                    </button>
+
+                    <button
+                      onClick={() => setRecognitionStudent(student)}
+                      className="w-full h-11 rounded-xl border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
+                    >
+                      <Trophy size={16} />
+                      Reconocer
                     </button>
 
                     <button
@@ -1053,25 +1052,6 @@ export function Alumnos() {
                       className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="text-sm text-zinc-500 mb-2 flex items-center gap-2">
-                    <Cake className="h-4 w-4" />
-                    Fecha de nacimiento
-                  </label>
-
-                  <input
-                    type="date"
-                    value={form.birth_date}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        birth_date: e.target.value,
-                      })
-                    }
-                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
-                  />
                 </div>
 
                 <div>
@@ -1360,6 +1340,13 @@ export function Alumnos() {
             </div>
           </div>
         </div>
+      )}
+
+      {recognitionStudent && (
+        <StudentRecognitionModal
+          student={recognitionStudent}
+          onClose={() => setRecognitionStudent(null)}
+        />
       )}
     </div>
   );
