@@ -108,7 +108,7 @@ export async function getTXSIntelligentAlerts(): Promise<TXSIntelligentAlerts> {
     .filter(
       (student) =>
         Number(student.points_to_next_level || 0) > 0 &&
-        Number(student.points_to_next_level || 0) <= 5,
+        Number(student.points_to_next_level || 0) <= 10,
     )
     .sort((a, b) => a.points_to_next_level - b.points_to_next_level)
     .slice(0, 8);
@@ -117,9 +117,11 @@ export async function getTXSIntelligentAlerts(): Promise<TXSIntelligentAlerts> {
     (weeklyEvaluationsResponse.data || []).map((row) => row.student_id),
   );
 
-  const missingWeeklyEvaluation = ((studentsResponse.data || []) as TXSMissingEvaluationStudent[])
-    .filter((student) => !evaluatedStudentIds.has(student.id))
-    .slice(0, 8);
+  const allMissingWeeklyEvaluation = (
+    (studentsResponse.data || []) as TXSMissingEvaluationStudent[]
+  ).filter((student) => !evaluatedStudentIds.has(student.id));
+
+  const missingWeeklyEvaluation = allMissingWeeklyEvaluation.slice(0, 5);
 
   const monthlyPointsByStudent = new Map<string, number>();
 
@@ -149,7 +151,9 @@ export async function getTXSIntelligentAlerts(): Promise<TXSIntelligentAlerts> {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => Number(b?.monthly_points || 0) - Number(a?.monthly_points || 0))
+    .sort(
+      (a, b) => Number(b?.monthly_points || 0) - Number(a?.monthly_points || 0),
+    )
     .slice(0, 5) as TXSMonthlyHighlightStudent[];
 
   return {

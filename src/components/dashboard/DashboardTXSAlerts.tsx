@@ -123,11 +123,13 @@ export function DashboardTXSAlerts() {
               <div className="rounded-2xl border border-yellow-500/15 bg-black/30 p-4">
                 <div className="mb-4 flex items-center gap-2">
                   <Target className="h-5 w-5 text-yellow-300" />
-                  <h3 className="font-black text-white">Cerca de subir nivel</h3>
+                  <h3 className="font-black text-white">
+                    Cerca de subir nivel
+                  </h3>
                 </div>
 
                 {data.nearLevelUp.length === 0 ? (
-                  <EmptyState text="Ningún alumno está a 5 puntos o menos." />
+                  <EmptyState text="Ningún alumno está a 10 puntos o menos." />
                 ) : (
                   <div className="space-y-3">
                     {data.nearLevelUp.map((student) => (
@@ -156,7 +158,9 @@ export function DashboardTXSAlerts() {
               <div className="rounded-2xl border border-sky-500/15 bg-black/30 p-4">
                 <div className="mb-4 flex items-center gap-2">
                   <ClipboardCheck className="h-5 w-5 text-sky-300" />
-                  <h3 className="font-black text-white">Sin evaluación semanal</h3>
+                  <h3 className="font-black text-white">
+                    Sin evaluación semanal
+                  </h3>
                 </div>
 
                 {data.missingWeeklyEvaluation.length === 0 ? (
