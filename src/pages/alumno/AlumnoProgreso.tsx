@@ -9,6 +9,7 @@ import {
   Sparkles,
   Star,
   TrendingUp,
+  Trophy,
 } from "lucide-react";
 
 import { Badge } from "@/src/components/ui/Badge";
@@ -18,6 +19,14 @@ import {
   getStudentEvaluations,
   StudentEvaluationWithStudent,
 } from "@/src/services/evaluationsService";
+import {
+  getStudentRecognitionSummary,
+  recognitionOptions,
+} from "@/src/services/recognitionsService";
+
+type RecognitionSummaryItem = (typeof recognitionOptions)[number] & {
+  count: number;
+};
 
 type Student = {
   id: string;
@@ -137,10 +146,22 @@ export function AlumnoProgreso() {
   const [evaluations, setEvaluations] = useState<
     StudentEvaluationWithStudent[]
   >([]);
+  const [recognitions, setRecognitions] = useState<RecognitionSummaryItem[]>(
+    recognitionOptions.map((option) => ({ ...option, count: 0 })),
+  );
   const [loading, setLoading] = useState(true);
 
   const latestEvaluation = evaluations[0] || null;
   const trend = useMemo(() => getTrend(evaluations), [evaluations]);
+
+  const totalRecognitions = useMemo(
+    () => recognitions.reduce((sum, item) => sum + item.count, 0),
+    [recognitions],
+  );
+
+  const topRecognition = useMemo(() => {
+    return [...recognitions].sort((a, b) => b.count - a.count)[0] || null;
+  }, [recognitions]);
 
   const stats = useMemo(() => {
     if (evaluations.length === 0) {
@@ -211,6 +232,18 @@ export function AlumnoProgreso() {
           loadEvaluations(student.id);
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "student_recognitions",
+          filter: `student_id=eq.${student.id}`,
+        },
+        () => {
+          loadRecognitions(student.id);
+        },
+      )
       .subscribe();
 
     return () => {
@@ -221,6 +254,11 @@ export function AlumnoProgreso() {
   async function loadEvaluations(studentId: string) {
     const data = await getStudentEvaluations(studentId);
     setEvaluations(data);
+  }
+
+  async function loadRecognitions(studentId: string) {
+    const data = await getStudentRecognitionSummary(studentId);
+    setRecognitions(data);
   }
 
   async function loadProgress() {
@@ -251,7 +289,10 @@ export function AlumnoProgreso() {
       setStudent(currentStudent);
 
       if (currentStudent?.id) {
-        await loadEvaluations(currentStudent.id);
+        await Promise.all([
+          loadEvaluations(currentStudent.id),
+          loadRecognitions(currentStudent.id),
+        ]);
       }
     } catch (error) {
       console.error("Error cargando progreso del alumno:", error);
@@ -394,6 +435,85 @@ export function AlumnoProgreso() {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="overflow-hidden border-yellow-500/20 bg-gradient-to-br from-zinc-950 via-black to-yellow-950/10">
+            <CardContent className="p-5 sm:p-6">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Trophy className="h-5 w-5 text-yellow-400" />
+                    <h2 className="text-xl font-bold text-white">
+                      Reconocimientos TXS
+                    </h2>
+                  </div>
+                  <p className="text-sm text-zinc-500">
+                    Logros positivos otorgados por el equipo de la academia.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 px-4 py-3 text-center">
+                  <p className="text-xs text-zinc-500">Total</p>
+                  <p className="text-3xl font-black text-yellow-400">
+                    {totalRecognitions}
+                  </p>
+                </div>
+              </div>
+
+              {totalRecognitions === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/60 p-5 text-center">
+                  <Star className="mx-auto mb-3 h-8 w-8 text-zinc-600" />
+                  <p className="font-semibold text-white">
+                    Todavía no tienes reconocimientos.
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Cuando tu maestro o moderador te otorgue uno, aparecerá
+                    aquí.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {topRecognition && topRecognition.count > 0 && (
+                    <div className="mb-4 rounded-2xl border border-yellow-500/20 bg-yellow-500/[0.06] p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-yellow-400/80">
+                        Reconocimiento destacado
+                      </p>
+                      <p className="mt-2 text-lg font-bold text-white">
+                        <span className="mr-2">{topRecognition.emoji}</span>
+                        {topRecognition.label}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        {topRecognition.count} reconocimiento(s) recibidos.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    {recognitions.map((recognition) => (
+                      <div
+                        key={recognition.type}
+                        className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-2xl" aria-hidden="true">
+                            {recognition.emoji}
+                          </span>
+                          <span className="text-2xl font-black text-yellow-400">
+                            {recognition.count}
+                          </span>
+                        </div>
+                        <p className="mt-3 font-bold text-white">
+                          {recognition.label}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">
+                          {recognition.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           {latestEvaluation && (
             <Card className="overflow-hidden">
