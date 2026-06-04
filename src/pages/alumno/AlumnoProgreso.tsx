@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
+  Clock3,
   Loader2,
   MessageSquareText,
   Sparkles,
   Star,
   TrendingUp,
   Trophy,
+  Zap,
 } from "lucide-react";
 
 import { Badge } from "@/src/components/ui/Badge";
@@ -23,6 +25,13 @@ import {
   getStudentRecognitionSummary,
   recognitionOptions,
 } from "@/src/services/recognitionsService";
+import {
+  getStudentPointsHistory,
+  getStudentProgress,
+  getTXSSourceLabel,
+  TXSPointsLedgerItem,
+  TXSProgressSummary,
+} from "@/src/services/txsProgressService";
 
 type RecognitionSummaryItem = (typeof recognitionOptions)[number] & {
   count: number;
@@ -36,7 +45,7 @@ type Student = {
 };
 
 function formatDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString("es-MX", {
+  return new Date(date).toLocaleDateString("es-MX", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -141,8 +150,28 @@ function getScoreMessage(score: number) {
   return "Esta semana toca reforzar bases. Enfócate en las recomendaciones del instructor.";
 }
 
+function getLevelProgressPercent(progress: TXSProgressSummary | null) {
+  if (!progress) return 0;
+  if (!progress.next_level_min_points) return 100;
+
+  const currentLevelStart = Math.max(progress.next_level_min_points - 20, 0);
+  const levelRange = progress.next_level_min_points - currentLevelStart;
+  const pointsInLevel = progress.total_points - currentLevelStart;
+
+  if (levelRange <= 0) return 0;
+
+  return Math.min(
+    100,
+    Math.max(0, Math.round((pointsInLevel / levelRange) * 100)),
+  );
+}
+
 export function AlumnoProgreso() {
   const [student, setStudent] = useState<Student | null>(null);
+  const [txsProgress, setTxsProgress] = useState<TXSProgressSummary | null>(
+    null,
+  );
+  const [pointsHistory, setPointsHistory] = useState<TXSPointsLedgerItem[]>([]);
   const [evaluations, setEvaluations] = useState<
     StudentEvaluationWithStudent[]
   >([]);
@@ -153,6 +182,7 @@ export function AlumnoProgreso() {
 
   const latestEvaluation = evaluations[0] || null;
   const trend = useMemo(() => getTrend(evaluations), [evaluations]);
+  const levelPercent = getLevelProgressPercent(txsProgress);
 
   const totalRecognitions = useMemo(
     () => recognitions.reduce((sum, item) => sum + item.count, 0),
@@ -165,12 +195,7 @@ export function AlumnoProgreso() {
 
   const stats = useMemo(() => {
     if (evaluations.length === 0) {
-      return {
-        average: 0,
-        technique: 0,
-        discipline: 0,
-        attitude: 0,
-      };
+      return { average: 0, technique: 0, discipline: 0, attitude: 0 };
     }
 
     const total = evaluations.length;
@@ -230,6 +255,7 @@ export function AlumnoProgreso() {
         },
         () => {
           loadEvaluations(student.id);
+          loadTXSProgress(student.id);
         },
       )
       .on(
@@ -242,6 +268,19 @@ export function AlumnoProgreso() {
         },
         () => {
           loadRecognitions(student.id);
+          loadTXSProgress(student.id);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "student_points_ledger",
+          filter: `student_id=eq.${student.id}`,
+        },
+        () => {
+          loadTXSProgress(student.id);
         },
       )
       .subscribe();
@@ -259,6 +298,16 @@ export function AlumnoProgreso() {
   async function loadRecognitions(studentId: string) {
     const data = await getStudentRecognitionSummary(studentId);
     setRecognitions(data);
+  }
+
+  async function loadTXSProgress(studentId: string) {
+    const [progress, history] = await Promise.all([
+      getStudentProgress(studentId),
+      getStudentPointsHistory(studentId, 10),
+    ]);
+
+    setTxsProgress(progress);
+    setPointsHistory(history);
   }
 
   async function loadProgress() {
@@ -279,6 +328,7 @@ export function AlumnoProgreso() {
         .from("students")
         .select("id, full_name, email, group_id")
         .ilike("email", user.email)
+        .eq("is_deleted", false)
         .maybeSingle();
 
       if (error) {
@@ -292,6 +342,7 @@ export function AlumnoProgreso() {
         await Promise.all([
           loadEvaluations(currentStudent.id),
           loadRecognitions(currentStudent.id),
+          loadTXSProgress(currentStudent.id),
         ]);
       }
     } catch (error) {
@@ -323,8 +374,8 @@ export function AlumnoProgreso() {
         </h1>
 
         <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-          Aquí verás tus evaluaciones semanales, comentarios del instructor y
-          recomendaciones para seguir mejorando.
+          Aquí verás tus evaluaciones, reconocimientos, puntos TXS y avance de
+          nivel dentro de la academia.
         </p>
       </div>
 
@@ -341,20 +392,71 @@ export function AlumnoProgreso() {
             </p>
           </CardContent>
         </Card>
-      ) : evaluations.length === 0 ? (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <Star className="mx-auto mb-4 h-10 w-10 text-zinc-600" />
-            <h2 className="text-xl font-bold text-white">
-              Todavía no tienes evaluaciones
-            </h2>
-            <p className="mt-2 text-sm text-zinc-500">
-              Cuando tu maestro registre tu evaluación semanal aparecerá aquí.
-            </p>
-          </CardContent>
-        </Card>
       ) : (
         <>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card className="overflow-hidden border-yellow-500/20 bg-gradient-to-br from-zinc-950 via-black to-yellow-950/20">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-zinc-500">Nivel TXS</p>
+                    <p className="mt-2 text-3xl font-black text-white">
+                      {txsProgress?.current_level_name || "Nivel 1"}
+                    </p>
+                    <p className="mt-1 text-xs text-yellow-400">
+                      {txsProgress?.badge_label || "Inicio TXS"}
+                    </p>
+                  </div>
+                  <Trophy className="h-10 w-10 text-yellow-400" />
+                </div>
+
+                <div className="mt-5">
+                  <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
+                    <span>Progreso</span>
+                    <span>{levelPercent}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      className="h-full rounded-full bg-yellow-400"
+                      style={{ width: `${levelPercent}%` }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-zinc-500">Puntos TXS</p>
+                    <p className="mt-2 text-3xl font-black text-yellow-400">
+                      {txsProgress?.total_points ?? 0}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Puntos acumulados históricos.
+                    </p>
+                  </div>
+                  <Zap className="h-9 w-9 text-yellow-400" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-sm text-zinc-500">Siguiente nivel</p>
+                <p className="mt-2 text-2xl font-bold text-white">
+                  {txsProgress?.next_level_name || "Máximo nivel"}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {txsProgress?.next_level_min_points
+                    ? `Te faltan ${txsProgress.points_to_next_level} puntos.`
+                    : "Ya estás en el nivel más alto."}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
             <Card>
               <CardContent className="p-5">
@@ -413,28 +515,80 @@ export function AlumnoProgreso() {
 
             <Card>
               <CardContent className="p-5">
-                <p className="text-sm text-zinc-500">Nivel TXS</p>
+                <p className="text-sm text-zinc-500">Evaluaciones</p>
                 <p className="mt-2 text-2xl font-bold text-white">
-                  Próximamente
+                  {evaluations.length}
                 </p>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Se activará cuando definamos la fórmula oficial.
+                  Evaluaciones registradas por el instructor.
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardContent className="p-5">
-                <p className="text-sm text-zinc-500">Puntos TXS</p>
+                <p className="text-sm text-zinc-500">Reconocimientos</p>
                 <p className="mt-2 text-2xl font-bold text-yellow-400">
-                  Próximamente
+                  {totalRecognitions}
                 </p>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Asistencia, evaluación y constancia sumarán puntos.
+                  Logros positivos dentro de TXS.
                 </p>
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardContent className="p-5 sm:p-6">
+              <div className="mb-5 flex items-center gap-3">
+                <Clock3 className="h-5 w-5 text-yellow-400" />
+                <h2 className="text-xl font-bold text-white">
+                  Historial de puntos TXS
+                </h2>
+              </div>
+
+              {pointsHistory.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/60 p-5 text-center">
+                  <Zap className="mx-auto mb-3 h-8 w-8 text-zinc-600" />
+                  <p className="font-semibold text-white">
+                    Todavía no tienes movimientos de puntos.
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Tus asistencias, evaluaciones y reconocimientos aparecerán
+                    aquí.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pointsHistory.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <p className="font-semibold text-white">
+                          {item.reason}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          {getTXSSourceLabel(item.source_type)} •{" "}
+                          {formatDate(item.created_at)}
+                        </p>
+                      </div>
+
+                      <span
+                        className={`text-xl font-black ${
+                          item.points > 0 ? "text-yellow-400" : "text-red-400"
+                        }`}
+                      >
+                        {item.points > 0 ? "+" : ""}
+                        {item.points}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="overflow-hidden border-yellow-500/20 bg-gradient-to-br from-zinc-950 via-black to-yellow-950/10">
             <CardContent className="p-5 sm:p-6">
@@ -464,10 +618,6 @@ export function AlumnoProgreso() {
                   <Star className="mx-auto mb-3 h-8 w-8 text-zinc-600" />
                   <p className="font-semibold text-white">
                     Todavía no tienes reconocimientos.
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    Cuando tu maestro o moderador te otorgue uno, aparecerá
-                    aquí.
                   </p>
                 </div>
               ) : (
@@ -515,136 +665,157 @@ export function AlumnoProgreso() {
             </CardContent>
           </Card>
 
-          {latestEvaluation && (
-            <Card className="overflow-hidden">
-              <CardContent className="p-5 sm:p-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="mb-3 flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-yellow-400" />
-                      <h2 className="text-2xl font-bold text-white">
-                        Última evaluación
-                      </h2>
-                    </div>
-
-                    <p className="text-sm text-zinc-500">
-                      Semana del {formatDate(latestEvaluation.week_start_date)}
-                    </p>
-                  </div>
-
-                  {(() => {
-                    const scoreMeta = getScoreMeta(
-                      latestEvaluation.average_score,
-                    );
-
-                    return (
-                      <div
-                        className={`rounded-2xl border px-5 py-4 text-center ${scoreMeta.borderClass}`}
-                      >
-                        <p className="text-xs text-zinc-500">Calificación</p>
-                        <p
-                          className={`text-4xl font-bold ${scoreMeta.textClass}`}
-                        >
-                          {latestEvaluation.average_score}
-                        </p>
-                        <div className="mt-2">
-                          {getScoreBadge(latestEvaluation.average_score)}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
-                    <p className="text-xs text-zinc-500">Técnica</p>
-                    <p className="mt-1 text-2xl font-bold text-white">
-                      {latestEvaluation.technique_score}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
-                    <p className="text-xs text-zinc-500">Disciplina</p>
-                    <p className="mt-1 text-2xl font-bold text-white">
-                      {latestEvaluation.discipline_score}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
-                    <p className="text-xs text-zinc-500">Actitud</p>
-                    <p className="mt-1 text-2xl font-bold text-white">
-                      {latestEvaluation.attitude_score}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <MessageSquareText className="h-5 w-5 text-yellow-400" />
-                    <h3 className="font-semibold text-white">
-                      Comentarios del instructor
-                    </h3>
-                  </div>
-
-                  <p className="text-sm leading-6 text-zinc-300">
-                    {latestEvaluation.comments ||
-                      getScoreMessage(latestEvaluation.average_score)}
-                  </p>
-
-                  {latestEvaluation.recommendations && (
-                    <div className="mt-5 border-t border-zinc-800 pt-5">
-                      <p className="mb-2 text-sm font-semibold text-yellow-400">
-                        Recomendaciones
-                      </p>
-                      <p className="text-sm leading-6 text-zinc-300">
-                        {latestEvaluation.recommendations}
-                      </p>
-                    </div>
-                  )}
-                </div>
+          {evaluations.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Star className="mx-auto mb-4 h-10 w-10 text-zinc-600" />
+                <h2 className="text-xl font-bold text-white">
+                  Todavía no tienes evaluaciones
+                </h2>
+                <p className="mt-2 text-sm text-zinc-500">
+                  Cuando tu maestro registre tu evaluación semanal aparecerá
+                  aquí.
+                </p>
               </CardContent>
             </Card>
-          )}
-
-          <Card>
-            <CardContent className="p-5 sm:p-6">
-              <div className="mb-5 flex items-center gap-3">
-                <BarChart3 className="h-5 w-5 text-yellow-400" />
-                <h2 className="text-xl font-bold text-white">
-                  Historial de evaluaciones
-                </h2>
-              </div>
-
-              <div className="space-y-3">
-                {evaluations.map((evaluation) => (
-                  <div
-                    key={evaluation.id}
-                    className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          ) : (
+            <>
+              {latestEvaluation && (
+                <Card className="overflow-hidden">
+                  <CardContent className="p-5 sm:p-6">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div>
-                        <p className="font-semibold text-white">
-                          Semana del {formatDate(evaluation.week_start_date)}
-                        </p>
+                        <div className="mb-3 flex items-center gap-2">
+                          <TrendingUp className="h-5 w-5 text-yellow-400" />
+                          <h2 className="text-2xl font-bold text-white">
+                            Última evaluación
+                          </h2>
+                        </div>
+
                         <p className="text-sm text-zinc-500">
-                          Técnica {evaluation.technique_score} • Disciplina{" "}
-                          {evaluation.discipline_score} • Actitud{" "}
-                          {evaluation.attitude_score}
+                          Semana del{" "}
+                          {formatDate(latestEvaluation.week_start_date)}
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl font-bold text-yellow-400">
-                          {evaluation.average_score}
-                        </span>
-                        {getScoreBadge(evaluation.average_score)}
+                      {(() => {
+                        const scoreMeta = getScoreMeta(
+                          latestEvaluation.average_score,
+                        );
+
+                        return (
+                          <div
+                            className={`rounded-2xl border px-5 py-4 text-center ${scoreMeta.borderClass}`}
+                          >
+                            <p className="text-xs text-zinc-500">
+                              Calificación
+                            </p>
+                            <p
+                              className={`text-4xl font-bold ${scoreMeta.textClass}`}
+                            >
+                              {latestEvaluation.average_score}
+                            </p>
+                            <div className="mt-2">
+                              {getScoreBadge(latestEvaluation.average_score)}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+                        <p className="text-xs text-zinc-500">Técnica</p>
+                        <p className="mt-1 text-2xl font-bold text-white">
+                          {latestEvaluation.technique_score}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+                        <p className="text-xs text-zinc-500">Disciplina</p>
+                        <p className="mt-1 text-2xl font-bold text-white">
+                          {latestEvaluation.discipline_score}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+                        <p className="text-xs text-zinc-500">Actitud</p>
+                        <p className="mt-1 text-2xl font-bold text-white">
+                          {latestEvaluation.attitude_score}
+                        </p>
                       </div>
                     </div>
+
+                    <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+                      <div className="mb-3 flex items-center gap-2">
+                        <MessageSquareText className="h-5 w-5 text-yellow-400" />
+                        <h3 className="font-semibold text-white">
+                          Comentarios del instructor
+                        </h3>
+                      </div>
+
+                      <p className="text-sm leading-6 text-zinc-300">
+                        {latestEvaluation.comments ||
+                          getScoreMessage(latestEvaluation.average_score)}
+                      </p>
+
+                      {latestEvaluation.recommendations && (
+                        <div className="mt-5 border-t border-zinc-800 pt-5">
+                          <p className="mb-2 text-sm font-semibold text-yellow-400">
+                            Recomendaciones
+                          </p>
+                          <p className="text-sm leading-6 text-zinc-300">
+                            {latestEvaluation.recommendations}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardContent className="p-5 sm:p-6">
+                  <div className="mb-5 flex items-center gap-3">
+                    <BarChart3 className="h-5 w-5 text-yellow-400" />
+                    <h2 className="text-xl font-bold text-white">
+                      Historial de evaluaciones
+                    </h2>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+
+                  <div className="space-y-3">
+                    {evaluations.map((evaluation) => (
+                      <div
+                        key={evaluation.id}
+                        className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="font-semibold text-white">
+                              Semana del{" "}
+                              {formatDate(evaluation.week_start_date)}
+                            </p>
+                            <p className="text-sm text-zinc-500">
+                              Técnica {evaluation.technique_score} • Disciplina{" "}
+                              {evaluation.discipline_score} • Actitud{" "}
+                              {evaluation.attitude_score}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl font-bold text-yellow-400">
+                              {evaluation.average_score}
+                            </span>
+                            {getScoreBadge(evaluation.average_score)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </>
       )}
     </div>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { StudentRecognitionModal } from "@/src/components/admin/StudentRecognitionModal";
+import { StudentDetailsModal } from "@/src/components/admin/StudentDetailsModal";
 import { generateStudentCredentialPdf } from "@/src/services/credentialService";
 import {
   CalendarDays,
@@ -198,6 +199,7 @@ export function Alumnos() {
   const [recognitionStudent, setRecognitionStudent] = useState<Student | null>(
     null,
   );
+  const [detailsStudent, setDetailsStudent] = useState<Student | null>(null);
 
   useEffect(() => {
     loadStudents();
@@ -775,12 +777,12 @@ export function Alumnos() {
                             </button>
 
                             <button
-                              onClick={() => handleDownloadCredential(student)}
-                              title="Descargar credencial"
-                              aria-label="Descargar credencial"
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black transition-all"
+                              onClick={() => setDetailsStudent(student)}
+                              title="Ver detalles"
+                              aria-label="Ver detalles"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-blue-500/30 text-blue-300 hover:bg-blue-500 hover:text-white transition-all"
                             >
-                              <IdCard size={15} />
+                              <Eye size={15} />
                             </button>
 
                             <button
@@ -963,7 +965,7 @@ export function Alumnos() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
                     <button
                       onClick={() => handleDownloadCredential(student)}
                       className="w-full h-11 rounded-xl border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
@@ -978,6 +980,14 @@ export function Alumnos() {
                     >
                       <CreditCard size={16} />
                       Anualidad
+                    </button>
+
+                    <button
+                      onClick={() => setDetailsStudent(student)}
+                      className="w-full h-11 rounded-xl border border-blue-500/30 text-blue-300 hover:bg-blue-500 hover:text-white font-bold flex items-center justify-center gap-2 transition-all"
+                    >
+                      <Eye size={16} />
+                      Detalles
                     </button>
 
                     <button
@@ -1381,6 +1391,15 @@ export function Alumnos() {
             </div>
           </div>
         </div>
+      )}
+
+      {detailsStudent && (
+        <StudentDetailsModal
+          student={detailsStudent}
+          groupInfo={getGroupInfo(detailsStudent.group_id)}
+          planName={getPlanName(detailsStudent.membership_type)}
+          onClose={() => setDetailsStudent(null)}
+        />
       )}
 
       {recognitionStudent && (

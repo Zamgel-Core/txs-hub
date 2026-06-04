@@ -40,6 +40,15 @@ import {
   updateMembershipPlan,
 } from "@/src/services/membershipPlansService";
 
+import {
+  getTXSLevels,
+  getTXSPointRules,
+  updateTXSLevel,
+  updateTXSPointRule,
+  TXSLevel,
+  TXSPointRule,
+} from "@/src/services/txsConfigService";
+
 const emptyPlanForm = {
   name: "",
   slug: "",
@@ -57,6 +66,10 @@ export function Configuracion() {
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [planForm, setPlanForm] = useState(emptyPlanForm);
 
+  const [txsLevels, setTXSLevels] = useState<TXSLevel[]>([]);
+  const [txsPointRules, setTXSPointRules] = useState<TXSPointRule[]>([]);
+  const [savingTXS, setSavingTXS] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
@@ -69,13 +82,18 @@ export function Configuracion() {
     try {
       setLoading(true);
 
-      const [settingsData, plansData] = await Promise.all([
-        getSystemSettings(),
-        getMembershipPlans(true),
-      ]);
+      const [settingsData, plansData, levelsData, rulesData] =
+        await Promise.all([
+          getSystemSettings(),
+          getMembershipPlans(true),
+          getTXSLevels(),
+          getTXSPointRules(),
+        ]);
 
       setSettings(settingsData);
       setPlans(plansData);
+      setTXSLevels(levelsData);
+      setTXSPointRules(rulesData);
     } catch (error) {
       console.error(error);
       alert("No se pudo cargar la configuración.");
@@ -96,6 +114,36 @@ export function Configuracion() {
       alert("No se pudo guardar la configuración.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveTXS() {
+    try {
+      setSavingTXS(true);
+
+      await Promise.all([
+        ...txsLevels.map((level) =>
+          updateTXSLevel(level.id, {
+            min_points: level.min_points,
+            max_points: level.max_points,
+            name: level.name,
+            badge_label: level.badge_label,
+          }),
+        ),
+
+        ...txsPointRules.map((rule) =>
+          updateTXSPointRule(rule.id, {
+            points: rule.points,
+          }),
+        ),
+      ]);
+
+      alert("Configuración TXS guardada correctamente.");
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo guardar la configuración TXS.");
+    } finally {
+      setSavingTXS(false);
     }
   }
 
@@ -147,13 +195,18 @@ export function Configuracion() {
       alert("Plan creado correctamente.");
     } catch (error) {
       console.error(error);
-      alert("No se pudo crear el plan. Revisa que el nombre/slug no esté duplicado.");
+      alert(
+        "No se pudo crear el plan. Revisa que el nombre/slug no esté duplicado.",
+      );
     } finally {
       setSavingPlan(false);
     }
   }
 
-  async function handleUpdatePlan(plan: MembershipPlan, values: Partial<MembershipPlan>) {
+  async function handleUpdatePlan(
+    plan: MembershipPlan,
+    values: Partial<MembershipPlan>,
+  ) {
     try {
       await updateMembershipPlan(plan.id, {
         name: values.name ?? plan.name,
@@ -161,8 +214,11 @@ export function Configuracion() {
         description: values.description ?? plan.description,
         price: Number(values.price ?? plan.price),
         duration_count: Number(values.duration_count ?? plan.duration_count),
-        duration_unit: (values.duration_unit ?? plan.duration_unit) as MembershipDurationUnit,
-        classes_per_day: Number(values.classes_per_day ?? plan.classes_per_day ?? 1),
+        duration_unit: (values.duration_unit ??
+          plan.duration_unit) as MembershipDurationUnit,
+        classes_per_day: Number(
+          values.classes_per_day ?? plan.classes_per_day ?? 1,
+        ),
         is_active: Boolean(values.is_active ?? plan.is_active),
         sort_order: Number(values.sort_order ?? plan.sort_order),
       });
@@ -186,7 +242,9 @@ export function Configuracion() {
       await loadSettings();
     } catch (error) {
       console.error(error);
-      alert("No se pudo eliminar. Si el plan ya se usó en pagos, mejor déjalo inactivo.");
+      alert(
+        "No se pudo eliminar. Si el plan ya se usó en pagos, mejor déjalo inactivo.",
+      );
     }
   }
 
@@ -224,8 +282,8 @@ export function Configuracion() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-zinc-400">
-            Administra datos generales, planes, precios, contacto y branding base de
-            TXS.
+            Administra datos generales, planes, precios, contacto y branding
+            base de TXS.
           </p>
         </div>
 
@@ -329,7 +387,8 @@ export function Configuracion() {
                 Planes dinámicos
               </p>
               <p className="mt-1 text-xs text-zinc-400">
-                {plans.filter((plan) => plan.is_active).length} plan(es) activos.
+                {plans.filter((plan) => plan.is_active).length} plan(es)
+                activos.
               </p>
             </div>
           </CardContent>
@@ -347,10 +406,12 @@ export function Configuracion() {
         <CardContent className="space-y-6">
           <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
             <p className="text-sm font-semibold text-yellow-200">
-              Estos planes alimentan el módulo de Pagos y pueden representar 1 clase o doble clase por día.
+              Estos planes alimentan el módulo de Pagos y pueden representar 1
+              clase o doble clase por día.
             </p>
             <p className="mt-1 text-xs text-zinc-400">
-              Si un plan ya fue usado, lo ideal es desactivarlo en vez de eliminarlo para conservar historial limpio.
+              Si un plan ya fue usado, lo ideal es desactivarlo en vez de
+              eliminarlo para conservar historial limpio.
             </p>
           </div>
 
@@ -390,7 +451,10 @@ export function Configuracion() {
                 min="1"
                 value={planForm.duration_count}
                 onChange={(event) =>
-                  setPlanForm({ ...planForm, duration_count: event.target.value })
+                  setPlanForm({
+                    ...planForm,
+                    duration_count: event.target.value,
+                  })
                 }
               />
             </div>
@@ -421,7 +485,10 @@ export function Configuracion() {
                 max="5"
                 value={planForm.classes_per_day}
                 onChange={(event) =>
-                  setPlanForm({ ...planForm, classes_per_day: event.target.value })
+                  setPlanForm({
+                    ...planForm,
+                    classes_per_day: event.target.value,
+                  })
                 }
               />
             </div>
@@ -542,7 +609,8 @@ export function Configuracion() {
                     <select
                       value={plan.duration_unit}
                       onChange={(event) => {
-                        const durationUnit = event.target.value as MembershipDurationUnit;
+                        const durationUnit = event.target
+                          .value as MembershipDurationUnit;
 
                         setPlans((current) =>
                           current.map((item) =>
@@ -730,10 +798,161 @@ export function Configuracion() {
 
               <Input
                 value={settings.logo_url || ""}
-                onChange={(event) => updateField("logo_url", event.target.value)}
+                onChange={(event) =>
+                  updateField("logo_url", event.target.value)
+                }
                 placeholder="https://..."
               />
             </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3">
+              🏆 Configuración TXS
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent className="space-y-8">
+            <div>
+              <h3 className="mb-4 text-lg font-semibold text-white">
+                Niveles TXS
+              </h3>
+
+              <div className="space-y-3">
+                {txsLevels.map((level) => (
+                  <div
+                    key={level.id}
+                    className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-800 p-4 md:grid-cols-4"
+                  >
+                    <Input
+                      value={level.name}
+                      onChange={(e) =>
+                        setTXSLevels((prev) =>
+                          prev.map((item) =>
+                            item.id === level.id
+                              ? { ...item, name: e.target.value }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+
+                    <Input
+                      type="number"
+                      value={level.min_points}
+                      onChange={(e) =>
+                        setTXSLevels((prev) =>
+                          prev.map((item) =>
+                            item.id === level.id
+                              ? {
+                                  ...item,
+                                  min_points: Number(e.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+
+                    <Input
+                      type="number"
+                      value={level.max_points ?? ""}
+                      onChange={(e) =>
+                        setTXSLevels((prev) =>
+                          prev.map((item) =>
+                            item.id === level.id
+                              ? {
+                                  ...item,
+                                  max_points:
+                                    e.target.value === ""
+                                      ? null
+                                      : Number(e.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+
+                    <Input
+                      value={level.badge_label ?? ""}
+                      onChange={(e) =>
+                        setTXSLevels((prev) =>
+                          prev.map((item) =>
+                            item.id === level.id
+                              ? {
+                                  ...item,
+                                  badge_label: e.target.value,
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-4 text-lg font-semibold text-white">
+                Reglas de puntos TXS
+              </h3>
+
+              <div className="space-y-3">
+                {txsPointRules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="flex items-center justify-between rounded-xl border border-zinc-800 p-4"
+                  >
+                    <div>
+                      <p className="font-medium text-white">{rule.label}</p>
+
+                      <p className="text-xs text-zinc-500">
+                        {rule.description}
+                      </p>
+                    </div>
+
+                    <Input
+                      type="number"
+                      className="w-28"
+                      value={rule.points}
+                      onChange={(e) =>
+                        setTXSPointRules((prev) =>
+                          prev.map((item) =>
+                            item.id === rule.id
+                              ? {
+                                  ...item,
+                                  points: Number(e.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSaveTXS}
+              disabled={savingTXS}
+              className="w-full"
+            >
+              {savingTXS ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Guardar configuración TXS
+                </>
+              )}
+            </Button>
           </CardContent>
         </Card>
       </div>
