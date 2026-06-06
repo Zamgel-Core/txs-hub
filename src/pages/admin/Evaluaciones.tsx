@@ -1,14 +1,16 @@
-// 📍 Ruta del archivo: src/pages/admin/Evaluaciones.tsx
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   BarChart3,
+  CheckCircle2,
   ClipboardCheck,
+  Clock3,
   Loader2,
   RefreshCcw,
   Save,
   Star,
   Users,
+  XCircle,
 } from "lucide-react";
 
 import { Badge } from "@/src/components/ui/Badge";
@@ -29,10 +31,14 @@ import {
   StudentEvaluationWithStudent,
 } from "@/src/services/evaluationsService";
 
+type EvaluationStatus = "pending" | "completed" | "not_applicable";
+
 type EvaluationDraft = {
+  evaluation_status: EvaluationStatus;
   technique_score: number;
   discipline_score: number;
   attitude_score: number;
+  na_reason: string;
   comments: string;
   recommendations: string;
 };
@@ -41,7 +47,8 @@ function getGroupLabel(group: EvaluationGroup) {
   return `${group.name} • ${group.schedule || "Sin horario"} (${group.level || "Sin nivel"})`;
 }
 
-function getScoreBadge(score: number) {
+function getScoreBadge(score: number | null) {
+  if (score === null) return <Badge variant="neutral">N/A</Badge>;
   if (score >= 9) return <Badge variant="success">Excelente</Badge>;
   if (score >= 7) return <Badge variant="warning">Bien</Badge>;
   return <Badge variant="danger">Reforzar</Badge>;
@@ -49,9 +56,11 @@ function getScoreBadge(score: number) {
 
 function createDefaultDraft(): EvaluationDraft {
   return {
+    evaluation_status: "pending",
     technique_score: 8,
     discipline_score: 8,
     attitude_score: 8,
+    na_reason: "",
     comments: "",
     recommendations: "",
   };
@@ -61,10 +70,12 @@ function ScoreSelect({
   label,
   value,
   onChange,
+  disabled,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <label className="block">
@@ -74,7 +85,8 @@ function ScoreSelect({
       <select
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-10 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-white outline-none focus:border-yellow-500/50"
+        disabled={disabled}
+        className="h-10 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-white outline-none focus:border-yellow-500/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
           <option key={score} value={score}>
@@ -108,14 +120,29 @@ export function Evaluaciones() {
   }, [groups, selectedGroup]);
 
   const stats = useMemo(() => {
-    const averages = students.map((student) => {
-      const draft = drafts[student.id] || createDefaultDraft();
-      return calculateAverageScore(
+    const allDrafts = students.map(
+      (student) => drafts[student.id] || createDefaultDraft(),
+    );
+
+    const completedDrafts = allDrafts.filter(
+      (draft) => draft.evaluation_status === "completed",
+    );
+
+    const naDrafts = allDrafts.filter(
+      (draft) => draft.evaluation_status === "not_applicable",
+    );
+
+    const pendingDrafts = allDrafts.filter(
+      (draft) => draft.evaluation_status === "pending",
+    );
+
+    const averages = completedDrafts.map((draft) =>
+      calculateAverageScore(
         draft.technique_score,
         draft.discipline_score,
         draft.attitude_score,
-      );
-    });
+      ),
+    );
 
     const groupAverage =
       averages.length > 0
@@ -130,6 +157,9 @@ export function Evaluaciones() {
     return {
       total: students.length,
       groupAverage,
+      completed: completedDrafts.length,
+      notApplicable: naDrafts.length,
+      pending: pendingDrafts.length,
       excellent: averages.filter((score) => score >= 9).length,
       needsWork: averages.filter((score) => score < 7).length,
     };
@@ -189,9 +219,14 @@ export function Evaluaciones() {
 
           accumulator[student.id] = existing
             ? {
-                technique_score: existing.technique_score,
-                discipline_score: existing.discipline_score,
-                attitude_score: existing.attitude_score,
+                evaluation_status:
+                  existing.evaluation_status === "not_applicable"
+                    ? "not_applicable"
+                    : "completed",
+                technique_score: existing.technique_score ?? 8,
+                discipline_score: existing.discipline_score ?? 8,
+                attitude_score: existing.attitude_score ?? 8,
+                na_reason: existing.na_reason || "",
                 comments: existing.comments || "",
                 recommendations: existing.recommendations || "",
               }
@@ -204,6 +239,8 @@ export function Evaluaciones() {
 
       setStudents(studentsData);
       setDrafts(nextDrafts);
+      setHasUnsavedChanges(false);
+      setSaveMessage("");
     } catch (error) {
       console.error("Error cargando evaluaciones:", error);
       alert("No se pudieron cargar las evaluaciones.");
@@ -244,12 +281,12 @@ export function Evaluaciones() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadEvaluationData, loadRecentEvaluations, selectedGroup, selectedWeek]);
+  }, [selectedGroup, selectedWeek, loadEvaluationData, loadRecentEvaluations]);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
-
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+
       event.preventDefault();
       event.returnValue = "";
     };
@@ -278,6 +315,28 @@ export function Evaluaciones() {
     setSaveMessage("");
   }
 
+  function updateDraftStatus(studentId: string, status: EvaluationStatus) {
+    setDrafts((current) => {
+      const currentDraft = current[studentId] || createDefaultDraft();
+
+      return {
+        ...current,
+        [studentId]: {
+          ...currentDraft,
+          evaluation_status: status,
+          na_reason:
+            status === "not_applicable"
+              ? currentDraft.na_reason ||
+                "No aplica para evaluación esta semana."
+              : currentDraft.na_reason,
+        },
+      };
+    });
+
+    setHasUnsavedChanges(true);
+    setSaveMessage("");
+  }
+
   async function handleSaveEvaluations() {
     if (!selectedGroup) {
       alert("Selecciona un grupo.");
@@ -289,25 +348,63 @@ export function Evaluaciones() {
       return;
     }
 
-    try {
-      setSaving(true);
+    const rowsToSave = students
+      .map((student) => {
+        const draft = drafts[student.id] || createDefaultDraft();
 
-      await saveStudentEvaluations(
-        students.map((student) => {
-          const draft = drafts[student.id] || createDefaultDraft();
+        if (draft.evaluation_status === "pending") {
+          return null;
+        }
 
+        if (draft.evaluation_status === "not_applicable") {
           return {
             student_id: student.id,
             group_id: selectedGroup,
             week_start_date: selectedWeek,
-            technique_score: draft.technique_score,
-            discipline_score: draft.discipline_score,
-            attitude_score: draft.attitude_score,
-            comments: draft.comments.trim() || null,
-            recommendations: draft.recommendations.trim() || null,
+            evaluation_status: "not_applicable" as const,
+            technique_score: null,
+            discipline_score: null,
+            attitude_score: null,
+            average_score: null,
+            na_reason:
+              draft.na_reason.trim() ||
+              "No aplica para evaluación esta semana.",
+            comments: null,
+            recommendations: null,
           };
-        }),
+        }
+
+        return {
+          student_id: student.id,
+          group_id: selectedGroup,
+          week_start_date: selectedWeek,
+          evaluation_status: "completed" as const,
+          technique_score: draft.technique_score,
+          discipline_score: draft.discipline_score,
+          attitude_score: draft.attitude_score,
+          average_score: calculateAverageScore(
+            draft.technique_score,
+            draft.discipline_score,
+            draft.attitude_score,
+          ),
+          na_reason: null,
+          comments: draft.comments.trim() || null,
+          recommendations: draft.recommendations.trim() || null,
+        };
+      })
+      .filter(Boolean);
+
+    if (rowsToSave.length === 0) {
+      alert(
+        "No hay evaluaciones para guardar. Marca al menos un alumno como Evaluado o N/A.",
       );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      await saveStudentEvaluations(rowsToSave);
 
       await Promise.all([loadEvaluationData(), loadRecentEvaluations()]);
 
@@ -336,8 +433,8 @@ export function Evaluaciones() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Califica técnica, disciplina y actitud. Esta base alimentará los
-              futuros puntos y niveles TXS.
+              Califica técnica, disciplina y actitud, o marca N/A cuando el
+              alumno no alcance evaluación semanal.
             </p>
           </div>
 
@@ -371,7 +468,7 @@ export function Evaluaciones() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-3">
             <p className="text-xs text-zinc-500">Alumnos</p>
             <p className="text-2xl font-bold text-white">{stats.total}</p>
@@ -384,6 +481,11 @@ export function Evaluaciones() {
             </p>
           </div>
 
+          <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3">
+            <p className="text-xs text-zinc-500">Evaluados</p>
+            <p className="text-2xl font-bold text-sky-400">{stats.completed}</p>
+          </div>
+
           <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
             <p className="text-xs text-zinc-500">Excelente</p>
             <p className="text-2xl font-bold text-emerald-400">
@@ -394,6 +496,13 @@ export function Evaluaciones() {
           <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3">
             <p className="text-xs text-zinc-500">Reforzar</p>
             <p className="text-2xl font-bold text-red-400">{stats.needsWork}</p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-700 bg-zinc-950/60 px-4 py-3">
+            <p className="text-xs text-zinc-500">Pendiente / N/A</p>
+            <p className="text-2xl font-bold text-white">
+              {stats.pending} / {stats.notApplicable}
+            </p>
           </div>
         </div>
       </div>
@@ -473,11 +582,16 @@ export function Evaluaciones() {
             <div className="divide-y divide-zinc-800">
               {students.map((student) => {
                 const draft = drafts[student.id] || createDefaultDraft();
-                const average = calculateAverageScore(
-                  draft.technique_score,
-                  draft.discipline_score,
-                  draft.attitude_score,
-                );
+                const isCompleted = draft.evaluation_status === "completed";
+                const isNA = draft.evaluation_status === "not_applicable";
+                const isPending = draft.evaluation_status === "pending";
+                const average = isCompleted
+                  ? calculateAverageScore(
+                      draft.technique_score,
+                      draft.discipline_score,
+                      draft.attitude_score,
+                    )
+                  : null;
 
                 return (
                   <div key={student.id} className="p-4 sm:p-6">
@@ -504,7 +618,7 @@ export function Evaluaciones() {
                           <p className="text-xs text-zinc-500">Promedio</p>
                           <div className="flex items-center gap-2">
                             <p className="text-xl font-bold text-white">
-                              {average}
+                              {average ?? "—"}
                             </p>
                             {getScoreBadge(average)}
                           </div>
@@ -512,71 +626,159 @@ export function Evaluaciones() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                      <ScoreSelect
-                        label="Técnica"
-                        value={draft.technique_score}
-                        onChange={(value) =>
-                          updateDraft(student.id, "technique_score", value)
-                        }
-                      />
+                    <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                      <button
+                        type="button"
+                        onClick={() => updateDraftStatus(student.id, "pending")}
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          isPending
+                            ? "border-zinc-500 bg-zinc-500/10"
+                            : "border-zinc-800 bg-zinc-950/50 hover:border-zinc-600"
+                        }`}
+                      >
+                        <div className="mb-1 flex items-center gap-2 font-bold text-white">
+                          <Clock3 className="h-4 w-4 text-zinc-400" />
+                          Pendiente
+                        </div>
+                        <p className="text-xs text-zinc-500">
+                          Aún no se captura evaluación.
+                        </p>
+                      </button>
 
-                      <ScoreSelect
-                        label="Disciplina"
-                        value={draft.discipline_score}
-                        onChange={(value) =>
-                          updateDraft(student.id, "discipline_score", value)
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateDraftStatus(student.id, "completed")
                         }
-                      />
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          isCompleted
+                            ? "border-yellow-500/60 bg-yellow-500/10"
+                            : "border-zinc-800 bg-zinc-950/50 hover:border-yellow-500/40"
+                        }`}
+                      >
+                        <div className="mb-1 flex items-center gap-2 font-bold text-white">
+                          <CheckCircle2 className="h-4 w-4 text-yellow-400" />
+                          Evaluado
+                        </div>
+                        <p className="text-xs text-zinc-500">
+                          Capturar calificación semanal.
+                        </p>
+                      </button>
 
-                      <ScoreSelect
-                        label="Actitud"
-                        value={draft.attitude_score}
-                        onChange={(value) =>
-                          updateDraft(student.id, "attitude_score", value)
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateDraftStatus(student.id, "not_applicable")
                         }
-                      />
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          isNA
+                            ? "border-red-500/50 bg-red-500/10"
+                            : "border-zinc-800 bg-zinc-950/50 hover:border-red-500/40"
+                        }`}
+                      >
+                        <div className="mb-1 flex items-center gap-2 font-bold text-white">
+                          <XCircle className="h-4 w-4 text-red-400" />
+                          N/A
+                        </div>
+                        <p className="text-xs text-zinc-500">
+                          No aplica para esta semana.
+                        </p>
+                      </button>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                      <label>
-                        <span className="mb-2 block text-xs font-medium text-zinc-500">
-                          Comentarios del instructor
-                        </span>
-                        <textarea
-                          value={draft.comments}
-                          onChange={(event) =>
-                            updateDraft(
-                              student.id,
-                              "comments",
-                              event.target.value,
-                            )
-                          }
-                          rows={3}
-                          placeholder="Ej. Excelente avance esta semana..."
-                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-yellow-500/50"
-                        />
-                      </label>
+                    {isCompleted && (
+                      <>
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                          <ScoreSelect
+                            label="Técnica"
+                            value={draft.technique_score}
+                            onChange={(value) =>
+                              updateDraft(student.id, "technique_score", value)
+                            }
+                          />
 
-                      <label>
-                        <span className="mb-2 block text-xs font-medium text-zinc-500">
-                          Recomendaciones
-                        </span>
-                        <textarea
-                          value={draft.recommendations}
-                          onChange={(event) =>
-                            updateDraft(
-                              student.id,
-                              "recommendations",
-                              event.target.value,
-                            )
-                          }
-                          rows={3}
-                          placeholder="Ej. Trabajar postura, coordinación, vueltas..."
-                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-yellow-500/50"
-                        />
-                      </label>
-                    </div>
+                          <ScoreSelect
+                            label="Disciplina"
+                            value={draft.discipline_score}
+                            onChange={(value) =>
+                              updateDraft(student.id, "discipline_score", value)
+                            }
+                          />
+
+                          <ScoreSelect
+                            label="Actitud"
+                            value={draft.attitude_score}
+                            onChange={(value) =>
+                              updateDraft(student.id, "attitude_score", value)
+                            }
+                          />
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                          <label>
+                            <span className="mb-2 block text-xs font-medium text-zinc-500">
+                              Comentarios del instructor
+                            </span>
+                            <textarea
+                              value={draft.comments}
+                              onChange={(event) =>
+                                updateDraft(
+                                  student.id,
+                                  "comments",
+                                  event.target.value,
+                                )
+                              }
+                              rows={3}
+                              placeholder="Ej. Excelente avance esta semana..."
+                              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-yellow-500/50"
+                            />
+                          </label>
+
+                          <label>
+                            <span className="mb-2 block text-xs font-medium text-zinc-500">
+                              Recomendaciones
+                            </span>
+                            <textarea
+                              value={draft.recommendations}
+                              onChange={(event) =>
+                                updateDraft(
+                                  student.id,
+                                  "recommendations",
+                                  event.target.value,
+                                )
+                              }
+                              rows={3}
+                              placeholder="Ej. Trabajar postura, coordinación, vueltas..."
+                              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-yellow-500/50"
+                            />
+                          </label>
+                        </div>
+                      </>
+                    )}
+
+                    {isNA && (
+                      <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
+                        <label>
+                          <span className="mb-2 flex items-center gap-2 text-xs font-medium text-red-300">
+                            <AlertCircle className="h-4 w-4" />
+                            Motivo N/A
+                          </span>
+                          <textarea
+                            value={draft.na_reason}
+                            onChange={(event) =>
+                              updateDraft(
+                                student.id,
+                                "na_reason",
+                                event.target.value,
+                              )
+                            }
+                            rows={3}
+                            placeholder="Ej. No asistió suficientes clases esta semana."
+                            className="w-full rounded-xl border border-red-500/20 bg-zinc-950 px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-red-500/50"
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -594,8 +796,8 @@ export function Evaluaciones() {
                   ¿Terminaste de capturar?
                 </h2>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Guarda las evaluaciones para que aparezcan en el portal del
-                  alumno.
+                  Guarda únicamente los alumnos marcados como Evaluado o N/A.
+                  Los pendientes no se registran todavía.
                 </p>
 
                 <p
@@ -629,7 +831,7 @@ export function Evaluaciones() {
                   variant="gold"
                   className="gap-2 px-6"
                   onClick={handleSaveEvaluations}
-                  disabled={saving || loadingStudents || students.length === 0}
+                  disabled={saving || loadingStudents}
                 >
                   {saving ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -680,31 +882,41 @@ export function Evaluaciones() {
           </div>
 
           <div className="space-y-3">
-            {recentEvaluations.map((evaluation) => (
-              <div
-                key={evaluation.id}
-                className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-semibold text-white">
-                      {evaluation.students?.full_name || "Alumno TXS"}
-                    </p>
-                    <p className="text-sm text-zinc-500">
-                      Semana {evaluation.week_start_date} •{" "}
-                      {evaluation.groups?.name || "Sin grupo"}
-                    </p>
-                  </div>
+            {recentEvaluations.map((evaluation) => {
+              const isNA = evaluation.evaluation_status === "not_applicable";
 
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl font-bold text-yellow-400">
-                      {evaluation.average_score}
-                    </span>
-                    {getScoreBadge(evaluation.average_score)}
+              return (
+                <div
+                  key={evaluation.id}
+                  className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-white">
+                        {evaluation.students?.full_name || "Alumno TXS"}
+                      </p>
+                      <p className="text-sm text-zinc-500">
+                        Semana {evaluation.week_start_date} •{" "}
+                        {evaluation.groups?.name || "Sin grupo"}
+                      </p>
+
+                      {isNA && evaluation.na_reason && (
+                        <p className="mt-1 text-xs text-red-300">
+                          N/A: {evaluation.na_reason}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl font-bold text-yellow-400">
+                        {isNA ? "N/A" : evaluation.average_score}
+                      </span>
+                      {getScoreBadge(isNA ? null : evaluation.average_score)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {recentEvaluations.length === 0 && (
               <p className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5 text-center text-zinc-500">
