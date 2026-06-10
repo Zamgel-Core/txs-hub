@@ -5,6 +5,7 @@ import {
   AlertCircle,
   BadgeDollarSign,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   Clock3,
   CreditCard,
@@ -24,6 +25,7 @@ import { supabase } from "@/src/lib/supabase";
 
 import {
   getPaymentsAdminData,
+  getStudentPaymentHistory,
   registerAdminPayment,
   MembershipStatus,
   MembershipType,
@@ -115,7 +117,10 @@ function getSuggestedMembershipEndDate(
   }
 
   if (plan.duration_unit === "days") {
-    const targetDate = addDays(startDate, Math.max(Number(plan.duration_count || 1) - 1, 0));
+    const targetDate = addDays(
+      startDate,
+      Math.max(Number(plan.duration_count || 1) - 1, 0),
+    );
     const sunday = getPreviousSunday(targetDate);
 
     if (sunday.getTime() < startDate.getTime()) {
@@ -125,7 +130,10 @@ function getSuggestedMembershipEndDate(
     return toLocalDateString(sunday);
   }
 
-  const targetDate = addMonths(startDate, Math.max(Number(plan.duration_count || 1), 1));
+  const targetDate = addMonths(
+    startDate,
+    Math.max(Number(plan.duration_count || 1), 1),
+  );
   const sunday = getPreviousSunday(targetDate);
 
   if (sunday.getTime() < startDate.getTime()) {
@@ -139,7 +147,11 @@ function getSuggestedMembershipStartDate(student?: PaymentStudent | null) {
   const currentEndDate = parseLocalDate(student?.membership_end_date || null);
   const currentDate = parseLocalDate(today);
 
-  if (currentEndDate && currentDate && currentEndDate.getTime() >= currentDate.getTime()) {
+  if (
+    currentEndDate &&
+    currentDate &&
+    currentEndDate.getTime() >= currentDate.getTime()
+  ) {
     return toLocalDateString(addDays(currentEndDate, 1));
   }
 
@@ -195,6 +207,27 @@ function isToday(date: string) {
   return date === today;
 }
 
+function isYesterday(date: string) {
+  const currentDate = parseLocalDate(today);
+
+  if (!currentDate) return false;
+
+  return date === toLocalDateString(addDays(currentDate, -1));
+}
+
+function isDateInRange(date: string, startDate: string, endDate: string) {
+  const targetDate = parseLocalDate(date);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+
+  if (!targetDate || !start || !end) return false;
+
+  return (
+    targetDate.getTime() >= start.getTime() &&
+    targetDate.getTime() <= end.getTime()
+  );
+}
+
 function isSameMonth(date: string) {
   const currentDate = parseLocalDate(today);
   const targetDate = parseLocalDate(date);
@@ -205,6 +238,50 @@ function isSameMonth(date: string) {
     currentDate.getMonth() === targetDate.getMonth() &&
     currentDate.getFullYear() === targetDate.getFullYear()
   );
+}
+
+function getWeekStart(date: Date) {
+  const weekStart = new Date(date);
+  const day = weekStart.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+
+  weekStart.setDate(weekStart.getDate() + diff);
+  weekStart.setHours(0, 0, 0, 0);
+
+  return weekStart;
+}
+
+function getWeekEnd(date: Date) {
+  const weekEnd = getWeekStart(date);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+
+  return weekEnd;
+}
+
+function isSameWeek(date: string) {
+  const currentDate = parseLocalDate(today);
+  const targetDate = parseLocalDate(date);
+
+  if (!currentDate || !targetDate) return false;
+
+  const weekStart = getWeekStart(currentDate);
+  const weekEnd = getWeekEnd(currentDate);
+
+  return (
+    targetDate.getTime() >= weekStart.getTime() &&
+    targetDate.getTime() <= weekEnd.getTime()
+  );
+}
+
+function getDerivedMembershipStatus(student: PaymentStudent): MembershipStatus {
+  const days = getDaysRemaining(student.membership_end_date);
+
+  if (days === null) return student.membership_status || "pendiente";
+
+  if (days >= 0) return "activa";
+
+  return "vencida";
 }
 
 function getStatusBadge(status: MembershipStatus) {
@@ -277,12 +354,23 @@ export function Pagos() {
   const [typeFilter, setTypeFilter] = useState<"todos" | MembershipType>(
     "todos",
   );
+  const [recentPaymentsFilter, setRecentPaymentsFilter] = useState<
+    "todos" | "hoy" | "ayer" | "semana" | "mes" | "rango"
+  >("semana");
+  const [customStartDate, setCustomStartDate] = useState(today);
+  const [customEndDate, setCustomEndDate] = useState(today);
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyStudent, setHistoryStudent] = useState<PaymentStudent | null>(
+    null,
+  );
+  const [historyPayments, setHistoryPayments] = useState<PaymentRecord[]>([]);
 
   useEffect(() => {
     loadPaymentData();
@@ -363,7 +451,9 @@ export function Pagos() {
   }
 
   function handleMembershipTypeChange(membershipType: MembershipType) {
-    const selectedPlan = membershipPlans.find((plan) => plan.slug === membershipType);
+    const selectedPlan = membershipPlans.find(
+      (plan) => plan.slug === membershipType,
+    );
     const suggestedEndDate = getSuggestedMembershipEndDate(
       paymentForm.membershipStartDate,
       selectedPlan,
@@ -385,8 +475,33 @@ export function Pagos() {
     setPaymentForm({
       ...paymentForm,
       membershipStartDate,
-      membershipEndDate: getSuggestedMembershipEndDate(membershipStartDate, selectedPlan),
+      membershipEndDate: getSuggestedMembershipEndDate(
+        membershipStartDate,
+        selectedPlan,
+      ),
     });
+  }
+
+  async function openHistoryModal(student: PaymentStudent) {
+    try {
+      setHistoryStudent(student);
+      setIsHistoryModalOpen(true);
+      setLoadingHistory(true);
+
+      const payments = await getStudentPaymentHistory(student.id);
+      setHistoryPayments(payments);
+    } catch (error) {
+      console.error("Error cargando historial del alumno:", error);
+      alert("No se pudo cargar el historial del alumno.");
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  function closeHistoryModal() {
+    setIsHistoryModalOpen(false);
+    setHistoryStudent(null);
+    setHistoryPayments([]);
   }
 
   async function handleRegisterPayment() {
@@ -463,8 +578,10 @@ export function Pagos() {
         student.email.toLowerCase().includes(term) ||
         student.phone.includes(term);
 
+      const derivedStatus = getDerivedMembershipStatus(student);
+
       const matchesStatus =
-        statusFilter === "todos" || student.membership_status === statusFilter;
+        statusFilter === "todos" || derivedStatus === statusFilter;
 
       const matchesType =
         typeFilter === "todos" || student.membership_type === typeFilter;
@@ -474,24 +591,65 @@ export function Pagos() {
   }, [students, searchTerm, statusFilter, typeFilter]);
 
   const activeCount = students.filter(
-    (student) => student.membership_status === "activa",
+    (student) => getDerivedMembershipStatus(student) === "activa",
   ).length;
 
   const expiredCount = students.filter(
-    (student) => student.membership_status === "vencida",
+    (student) => getDerivedMembershipStatus(student) === "vencida",
   ).length;
 
   const pendingCount = students.filter(
-    (student) => student.membership_status === "pendiente",
+    (student) => getDerivedMembershipStatus(student) === "pendiente",
   ).length;
 
-  const incomeToday = recentPayments
-    .filter((payment) => isToday(payment.payment_date))
-    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const paymentsToday = recentPayments.filter((payment) =>
+    isToday(payment.payment_date),
+  );
+  const paymentsWeek = recentPayments.filter((payment) =>
+    isSameWeek(payment.payment_date),
+  );
+  const paymentsMonth = recentPayments.filter((payment) =>
+    isSameMonth(payment.payment_date),
+  );
 
-  const incomeMonth = recentPayments
-    .filter((payment) => isSameMonth(payment.payment_date))
-    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const incomeToday = paymentsToday.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0,
+  );
+
+  const incomeWeek = paymentsWeek.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0,
+  );
+
+  const incomeMonth = paymentsMonth.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0,
+  );
+
+  const filteredRecentPayments = recentPayments.filter((payment) => {
+    if (recentPaymentsFilter === "hoy") return isToday(payment.payment_date);
+    if (recentPaymentsFilter === "ayer")
+      return isYesterday(payment.payment_date);
+    if (recentPaymentsFilter === "semana")
+      return isSameWeek(payment.payment_date);
+    if (recentPaymentsFilter === "mes")
+      return isSameMonth(payment.payment_date);
+    if (recentPaymentsFilter === "rango") {
+      return isDateInRange(
+        payment.payment_date,
+        customStartDate,
+        customEndDate,
+      );
+    }
+
+    return true;
+  });
+
+  const filteredRecentIncome = filteredRecentPayments.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0,
+  );
 
   const upcomingExpirations = students
     .filter((student) => {
@@ -543,11 +701,11 @@ export function Pagos() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardContent className="p-6">
             <CheckCircle2 className="mb-5 h-7 w-7 text-emerald-500" />
-            <p className="text-sm text-zinc-500">Activas</p>
+            <p className="text-sm text-zinc-500">Activas por fecha</p>
             <h2 className="mt-2 text-4xl font-bold text-white">
               {activeCount}
             </h2>
@@ -557,7 +715,7 @@ export function Pagos() {
         <Card>
           <CardContent className="p-6">
             <AlertCircle className="mb-5 h-7 w-7 text-red-500" />
-            <p className="text-sm text-zinc-500">Vencidas</p>
+            <p className="text-sm text-zinc-500">Vencidas por fecha</p>
             <h2 className="mt-2 text-4xl font-bold text-white">
               {expiredCount}
             </h2>
@@ -574,6 +732,16 @@ export function Pagos() {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardContent className="p-6">
+            <CalendarClock className="mb-5 h-7 w-7 text-amber-400" />
+            <p className="text-sm text-zinc-500">Vencen en 7 días</p>
+            <h2 className="mt-2 text-4xl font-bold text-white">
+              {upcomingExpirations.length}
+            </h2>
+          </CardContent>
+        </Card>
+
         <Card className="border-emerald-500/10">
           <CardContent className="p-6">
             <Wallet className="mb-5 h-7 w-7 text-emerald-400" />
@@ -581,6 +749,22 @@ export function Pagos() {
             <h2 className="mt-2 text-3xl font-bold text-white">
               {formatMoney(incomeToday)}
             </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              {paymentsToday.length} pago(s)
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-emerald-500/10">
+          <CardContent className="p-6">
+            <CalendarDays className="mb-5 h-7 w-7 text-emerald-400" />
+            <p className="text-sm text-zinc-500">Ingresos semana</p>
+            <h2 className="mt-2 text-3xl font-bold text-white">
+              {formatMoney(incomeWeek)}
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              {paymentsWeek.length} pago(s)
+            </p>
           </CardContent>
         </Card>
 
@@ -590,6 +774,19 @@ export function Pagos() {
             <p className="text-sm text-zinc-500">Ingresos mes</p>
             <h2 className="mt-2 text-3xl font-bold text-white">
               {formatMoney(incomeMonth)}
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              {paymentsMonth.length} pago(s)
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-gold-500/10">
+          <CardContent className="p-6">
+            <ReceiptText className="mb-5 h-7 w-7 text-gold-500" />
+            <p className="text-sm text-zinc-500">Movimientos cargados</p>
+            <h2 className="mt-2 text-4xl font-bold text-white">
+              {recentPayments.length}
             </h2>
           </CardContent>
         </Card>
@@ -661,6 +858,7 @@ export function Pagos() {
             <div className="space-y-4">
               {filteredStudents.map((student) => {
                 const meta = getStudentPaymentMeta(student);
+                const derivedStatus = getDerivedMembershipStatus(student);
 
                 return (
                   <div
@@ -670,13 +868,13 @@ export function Pagos() {
                     <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
                       <div className="min-w-0 space-y-3">
                         <div className="flex flex-wrap items-center gap-3">
-                          {getStatusIcon(student.membership_status)}
+                          {getStatusIcon(derivedStatus)}
 
                           <h3 className="text-xl font-semibold text-white">
                             {student.full_name}
                           </h3>
 
-                          {getStatusBadge(student.membership_status)}
+                          {getStatusBadge(derivedStatus)}
                         </div>
 
                         <div className="grid gap-3 text-sm text-zinc-400 md:grid-cols-2 xl:grid-cols-4">
@@ -711,14 +909,25 @@ export function Pagos() {
                         </div>
                       </div>
 
-                      <Button
-                        variant="gold"
-                        className="gap-2 whitespace-nowrap"
-                        onClick={() => openPaymentModal(student)}
-                      >
-                        <CreditCard className="h-4 w-4" />
-                        Registrar pago
-                      </Button>
+                      <div className="flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+                        <Button
+                          variant="outline"
+                          className="gap-2 whitespace-nowrap"
+                          onClick={() => openHistoryModal(student)}
+                        >
+                          <ReceiptText className="h-4 w-4" />
+                          Historial
+                        </Button>
+
+                        <Button
+                          variant="gold"
+                          className="gap-2 whitespace-nowrap"
+                          onClick={() => openPaymentModal(student)}
+                        >
+                          <CreditCard className="h-4 w-4" />
+                          Registrar pago
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -786,26 +995,106 @@ export function Pagos() {
 
           <Card>
             <CardContent className="p-6">
-              <div className="mb-5 flex items-center justify-between">
+              <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                 <div>
                   <h2 className="text-xl font-bold text-white">
                     Pagos recientes
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
-                    Últimos movimientos.
+                    Movimientos filtrados por periodo.
                   </p>
                 </div>
 
                 <ReceiptText className="h-6 w-6 text-gold-500" />
               </div>
 
-              {recentPayments.length === 0 ? (
+              <div className="mb-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 xl:grid-cols-6">
+                {[
+                  { value: "hoy", label: "Hoy" },
+                  { value: "ayer", label: "Ayer" },
+                  { value: "semana", label: "Semana" },
+                  { value: "mes", label: "Mes" },
+                  { value: "rango", label: "Rango" },
+                  { value: "todos", label: "Todos" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setRecentPaymentsFilter(
+                        option.value as
+                          | "todos"
+                          | "hoy"
+                          | "ayer"
+                          | "semana"
+                          | "mes"
+                          | "rango",
+                      )
+                    }
+                    className={`rounded-xl border px-3 py-2 font-semibold transition ${
+                      recentPaymentsFilter === option.value
+                        ? "border-gold-500 bg-gold-500 text-black"
+                        : "border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:border-gold-500/50 hover:text-white"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
+              {recentPaymentsFilter === "rango" && (
+                <div className="mb-4 grid grid-cols-1 gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/50 p-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+                      Desde
+                    </label>
+                    <Input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(event) =>
+                        setCustomStartDate(event.target.value)
+                      }
+                      className="[color-scheme:dark]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+                      Hasta
+                    </label>
+                    <Input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(event) => setCustomEndDate(event.target.value)}
+                      className="[color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4">
+                <p className="text-xs uppercase tracking-widest text-zinc-500">
+                  Resumen del filtro
+                </p>
+                <div className="mt-2 flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-2xl font-bold text-white">
+                      {formatMoney(filteredRecentIncome)}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {filteredRecentPayments.length} movimiento(s)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {filteredRecentPayments.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-zinc-800 p-5 text-center text-sm text-zinc-500">
-                  Sin pagos registrados.
+                  Sin pagos en este periodo.
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {recentPayments.slice(0, 8).map((payment) => (
+                  {filteredRecentPayments.slice(0, 12).map((payment) => (
                     <div
                       key={payment.id}
                       className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"
@@ -836,6 +1125,130 @@ export function Pagos() {
           </Card>
         </div>
       </div>
+
+      <Modal
+        isOpen={isHistoryModalOpen}
+        onClose={closeHistoryModal}
+        title="Historial de pagos"
+      >
+        {historyStudent && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-gold-500/20 bg-gold-500/10 p-4">
+              <p className="text-xs uppercase tracking-widest text-gold-400">
+                Alumno
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-white">
+                {historyStudent.full_name}
+              </h3>
+              <p className="mt-1 text-sm text-zinc-400">
+                Vencimiento actual:{" "}
+                {formatDate(historyStudent.membership_end_date)}
+              </p>
+            </div>
+
+            {loadingHistory ? (
+              <div className="flex items-center justify-center rounded-2xl border border-zinc-800 p-8 text-zinc-500">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Cargando historial...
+              </div>
+            ) : historyPayments.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-500">
+                Este alumno todavía no tiene pagos registrados.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Total pagado
+                    </p>
+                    <p className="mt-2 text-2xl font-bold text-emerald-400">
+                      {formatMoney(
+                        historyPayments.reduce(
+                          (sum, payment) => sum + Number(payment.amount || 0),
+                          0,
+                        ),
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Movimientos
+                    </p>
+                    <p className="mt-2 text-2xl font-bold text-white">
+                      {historyPayments.length}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Último pago
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {formatDate(historyPayments[0]?.payment_date || null)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+                  {historyPayments.map((payment) => (
+                    <div
+                      key={payment.id}
+                      className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"
+                    >
+                      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                        <div>
+                          <p className="font-semibold text-white">
+                            {payment.concept ||
+                              payment.plan_name_snapshot ||
+                              "Pago"}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {formatDate(payment.payment_date)} ·{" "}
+                            {payment.method || "sin método"}
+                          </p>
+                        </div>
+
+                        <p className="text-lg font-bold text-emerald-400">
+                          {formatMoney(Number(payment.amount || 0))}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-zinc-500 sm:grid-cols-2">
+                        <p>
+                          Inicio:{" "}
+                          <span className="text-zinc-300">
+                            {formatDate(payment.membership_start_date || null)}
+                          </span>
+                        </p>
+                        <p>
+                          Vence:{" "}
+                          <span className="text-zinc-300">
+                            {formatDate(payment.membership_end_date || null)}
+                          </span>
+                        </p>
+                      </div>
+
+                      {payment.notes && (
+                        <p className="mt-3 rounded-xl border border-zinc-800 bg-black/30 p-3 text-xs text-zinc-400">
+                          {payment.notes}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button variant="ghost" onClick={closeHistoryModal}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={isModalOpen}
@@ -874,7 +1287,9 @@ export function Pagos() {
                 >
                   {membershipPlans.map((plan) => (
                     <option key={plan.id} value={plan.slug}>
-                      {plan.name} · {formatMoney(Number(plan.price))} · {formatPlanDuration(plan)} · {formatClassesPerDay(plan.classes_per_day)}
+                      {plan.name} · {formatMoney(Number(plan.price))} ·{" "}
+                      {formatPlanDuration(plan)} ·{" "}
+                      {formatClassesPerDay(plan.classes_per_day)}
                     </option>
                   ))}
                 </select>
@@ -920,7 +1335,8 @@ export function Pagos() {
 
                 {selectedPlan && (
                   <p className="text-xs text-zinc-500">
-                    Sugerido por el plan: {formatMoney(Number(selectedPlan.price || 0))}
+                    Sugerido por el plan:{" "}
+                    {formatMoney(Number(selectedPlan.price || 0))}
                   </p>
                 )}
               </div>
@@ -942,7 +1358,9 @@ export function Pagos() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm text-zinc-400">Inicio de membresía</label>
+                <label className="text-sm text-zinc-400">
+                  Inicio de membresía
+                </label>
 
                 <Input
                   type="date"
@@ -980,18 +1398,22 @@ export function Pagos() {
                 <div>
                   <p className="text-sm text-zinc-500">Resumen</p>
                   <p className="mt-1 font-semibold text-white">
-                    {selectedPlan ? `Membresía ${selectedPlan.name}` : "Selecciona un plan"}
+                    {selectedPlan
+                      ? `Membresía ${selectedPlan.name}`
+                      : "Selecciona un plan"}
                   </p>
 
                   {selectedPlan && (
                     <p className="mt-1 text-xs text-zinc-500">
-                      Duración: {formatPlanDuration(selectedPlan)} · {formatClassesPerDay(selectedPlan.classes_per_day)}
+                      Duración: {formatPlanDuration(selectedPlan)} ·{" "}
+                      {formatClassesPerDay(selectedPlan.classes_per_day)}
                     </p>
                   )}
 
                   {selectedPlan && (
                     <p className="mt-1 text-xs text-zinc-500">
-                      Vigencia: {formatDate(paymentForm.membershipStartDate)} → {formatDate(paymentForm.membershipEndDate)}
+                      Vigencia: {formatDate(paymentForm.membershipStartDate)} →{" "}
+                      {formatDate(paymentForm.membershipEndDate)}
                     </p>
                   )}
                 </div>

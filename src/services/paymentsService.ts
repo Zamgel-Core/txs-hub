@@ -130,6 +130,21 @@ export async function registerAdminPayment(payload: RegisterPaymentPayload) {
   }
 }
 
+export async function getStudentPaymentHistory(studentId: string) {
+  const { data, error } = await supabase
+    .from("payments")
+    .select(paymentSelect)
+    .eq("student_id", studentId)
+    .order("payment_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || []) as PaymentRecord[];
+}
+
 export async function getStudentPaymentPortalData(
   email: string,
 ): Promise<StudentPaymentPortalData> {
