@@ -1082,7 +1082,7 @@ export function Pagos() {
                       {formatMoney(filteredRecentIncome)}
                     </p>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {filteredRecentPayments.length} movimiento(s)
+                      {filteredRecentPayments.length} movimiento(s) mostrado(s)
                     </p>
                   </div>
                 </div>
@@ -1094,7 +1094,7 @@ export function Pagos() {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {filteredRecentPayments.slice(0, 12).map((payment) => (
+                  {filteredRecentPayments.map((payment) => (
                     <div
                       key={payment.id}
                       className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4"

@@ -44,7 +44,7 @@ export async function getDashboardData() {
         "id, student_id, payment_date, concept, method, amount, status, notes, created_at",
       )
       .order("payment_date", { ascending: false })
-      .limit(50),
+      .limit(1000),
   ]);
 
   if (studentsResponse.error) {

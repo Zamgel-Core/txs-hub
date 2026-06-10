@@ -70,7 +70,6 @@ export type StudentPaymentPortalData = {
 
 const paymentSelect =
   "id, student_id, payment_date, concept, method, amount, status, notes, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot, students(full_name, email)";
-
 export async function getPaymentStudents() {
   const { data, error } = await supabase
     .from("students")
@@ -86,10 +85,12 @@ export async function getPaymentStudents() {
   return (data || []) as PaymentStudent[];
 }
 
-export async function getRecentPayments(limit = 50) {
+export async function getRecentPayments(limit = 500) {
   const { data, error } = await supabase
     .from("payments")
     .select(paymentSelect)
+    .ilike("concept", "Membresía%")
+    .in("status", ["pagado", "paid"])
     .order("payment_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -104,7 +105,7 @@ export async function getRecentPayments(limit = 50) {
 export async function getPaymentsAdminData() {
   const [students, recentPayments] = await Promise.all([
     getPaymentStudents(),
-    getRecentPayments(80),
+    getRecentPayments(500),
   ]);
 
   return {
@@ -135,6 +136,8 @@ export async function getStudentPaymentHistory(studentId: string) {
     .from("payments")
     .select(paymentSelect)
     .eq("student_id", studentId)
+    .ilike("concept", "Membresía%")
+    .in("status", ["pagado", "paid"])
     .order("payment_date", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -173,6 +176,8 @@ export async function getStudentPaymentPortalData(
       "id, student_id, payment_date, concept, method, amount, status, notes, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot",
     )
     .eq("student_id", studentData.id)
+    .ilike("concept", "Membresía%")
+    .in("status", ["pagado", "paid"])
     .order("payment_date", { ascending: false })
     .order("created_at", { ascending: false });
 

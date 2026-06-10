@@ -24,9 +24,37 @@ function getDaysRemaining(date: string | null) {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
+function parseLocalDate(date: string | null) {
+  if (!date) return null;
+
+  const cleanDate = String(date).trim();
+  if (!cleanDate) return null;
+
+  const [year, month, day] = cleanDate.split("T")[0].split("-").map(Number);
+
+  if (!year || !month || !day) return null;
+
+  const parsedDate = new Date(year, month - 1, day);
+
+  if (Number.isNaN(parsedDate.getTime())) return null;
+
+  return parsedDate;
+}
+
+function getTodayLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function isSameMonth(date: string) {
   const currentDate = new Date();
-  const targetDate = new Date(date);
+  const targetDate = parseLocalDate(date);
+
+  if (!targetDate) return false;
 
   return (
     currentDate.getMonth() === targetDate.getMonth() &&
@@ -35,8 +63,20 @@ function isSameMonth(date: string) {
 }
 
 function isToday(date: string) {
-  const currentDate = new Date().toISOString().slice(0, 10);
-  return date === currentDate;
+  return date === getTodayLocalDateString();
+}
+
+
+function isPaidPayment(payment: DashboardPayment) {
+  const status = String(payment.status || "").toLowerCase();
+  return status === "pagado" || status === "paid";
+}
+
+function isMembershipPayment(payment: DashboardPayment) {
+  return (
+    isPaidPayment(payment) &&
+    String(payment.concept || "").toLowerCase().startsWith("membresía")
+  );
 }
 
 export function useAdminDashboard() {
@@ -143,11 +183,13 @@ export function useAdminDashboard() {
       (student) => student.group_level === "avanzado",
     ).length;
 
-    const incomeToday = payments
+    const membershipPayments = payments.filter(isMembershipPayment);
+
+    const incomeToday = membershipPayments
       .filter((payment) => isToday(payment.payment_date))
       .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
-    const incomeMonth = payments
+    const incomeMonth = membershipPayments
       .filter((payment) => isSameMonth(payment.payment_date))
       .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
@@ -176,7 +218,7 @@ export function useAdminDashboard() {
       ).length,
     };
 
-    const recentPayments = payments.slice(0, 8);
+    const recentPayments = membershipPayments.slice(0, 8);
 
     const studentMap = new Map(
       students.map((student) => [student.id, student]),
