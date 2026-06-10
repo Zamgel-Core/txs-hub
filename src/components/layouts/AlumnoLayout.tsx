@@ -7,12 +7,14 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  Share2,
   TrendingUp,
   UserCircle,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { UserAvatar } from "@/src/components/common/UserAvatar";
 import { Button } from "../ui/Button";
 import { supabase } from "@/src/lib/supabase";
 import { getStudentAnnouncements } from "@/src/services/announcementsService";
@@ -23,14 +25,8 @@ type Student = {
   full_name: string;
   email: string;
   membership_status: "activa" | "vencida" | "pendiente" | null;
+  avatar_url?: string | null;
 };
-
-function getInitials(name: string) {
-  const parts = name.trim().split(" ").filter(Boolean);
-  if (parts.length === 0) return "TX";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-}
 
 function getMembershipText(status: Student["membership_status"]) {
   if (status === "activa") return "Membresía Activa";
@@ -141,7 +137,20 @@ export function AlumnoLayout() {
       return;
     }
 
-    setStudent(data as Student | null);
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    setStudent(
+      data
+        ? ({
+            ...(data as Student),
+            avatar_url: profileData?.avatar_url || null,
+          } as Student)
+        : null,
+    );
   }
 
   async function loadUnreadAnnouncements(studentId: string) {
@@ -165,7 +174,6 @@ export function AlumnoLayout() {
   }
 
   const studentName = student?.full_name || "Alumno TXS";
-  const initials = getInitials(studentName);
 
   const navItems = [
     { name: "Mi Portal", path: "/alumno", icon: LayoutDashboard },
@@ -178,6 +186,7 @@ export function AlumnoLayout() {
     },
     { name: "Clases y Eventos", path: "/alumno/eventos", icon: Calendar },
     { name: "Mi Progreso", path: "/alumno/progreso", icon: TrendingUp },
+    { name: "TXS Social", path: "/alumno/social", icon: Share2 },
     { name: "Historial de Pagos", path: "/alumno/pagos", icon: CreditCard },
     { name: "Soporte", path: "/alumno/soporte", icon: MessageSquare },
   ];
@@ -324,10 +333,10 @@ export function AlumnoLayout() {
 
                 <Link
                   to="/alumno/perfil"
-                  className="w-10 h-10 md:w-9 md:h-9 rounded-full border border-gold-500/40 bg-gold-500 text-black flex items-center justify-center font-bold text-sm transition hover:scale-105 hover:shadow-[0_0_20px_rgba(212,175,55,0.35)]"
+                  className="transition hover:scale-105 hover:shadow-[0_0_20px_rgba(212,175,55,0.35)]"
                   title="Mi Perfil"
                 >
-                  {initials}
+                  <UserAvatar name={studentName} imageUrl={student?.avatar_url || null} size="sm" />
                 </Link>
               </div>
 

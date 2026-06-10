@@ -17,15 +17,19 @@ import {
   X,
   QrCode,
   ClipboardCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { UserAvatar } from "@/src/components/common/UserAvatar";
 import { Button } from "../ui/Button";
 import { supabase } from "@/src/lib/supabase";
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [role, setRole] = useState<string>("admin");
+  const [profileName, setProfileName] = useState("Admin TXS");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -42,13 +46,16 @@ export function AdminLayout() {
 
       const { data } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, full_name, email, avatar_url")
         .eq("id", user.id)
         .single();
 
       if (data?.role) {
         setRole(data.role);
       }
+
+      setProfileName(data?.full_name || data?.email || (data?.role === "moderator" ? "Moderador TXS" : "Admin TXS"));
+      setAvatarUrl(data?.avatar_url || null);
     }
 
     loadRole();
@@ -76,6 +83,7 @@ export function AdminLayout() {
           { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
           { name: "Eventos", path: "/admin/eventos", icon: Calendar },
           { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
+          { name: "TXS Social", path: "/admin/social", icon: ShieldCheck },
         ]
       : [
           { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
@@ -97,6 +105,7 @@ export function AdminLayout() {
           { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
           { name: "Eventos", path: "/admin/eventos", icon: Calendar },
           { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
+          { name: "TXS Social", path: "/admin/social", icon: ShieldCheck },
           {
             name: "Configuración",
             path: "/admin/configuracion",
@@ -207,15 +216,11 @@ export function AdminLayout() {
           <div className="flex-1 flex justify-end">
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-zinc-300 hidden sm:inline-block">
-                {role === "moderator" ? "Moderador TXS" : "Admin TXS"}
+                {profileName}
               </span>
 
-              <Link
-                to="/admin/perfil"
-                className="w-10 h-10 md:w-8 md:h-8 rounded-full bg-gold-500/20 border border-gold-500/50 flex items-center justify-center text-gold-500 font-bold transition hover:scale-105 hover:bg-gold-500 hover:text-black"
-                title="Mi Perfil"
-              >
-                {role === "moderator" ? "M" : "A"}
+              <Link to="/admin/perfil" className="transition hover:scale-105" title="Mi Perfil">
+                <UserAvatar name={profileName} imageUrl={avatarUrl} size="sm" />
               </Link>
             </div>
           </div>

@@ -24,6 +24,7 @@ import { Reportes } from "@/src/pages/admin/Reportes";
 import { Configuracion } from "@/src/pages/admin/Configuracion";
 import { Mensajes } from "@/src/pages/admin/Mensajes";
 import { Evaluaciones } from "@/src/pages/admin/Evaluaciones";
+import { SocialModeracion } from "@/src/pages/admin/SocialModeracion";
 
 import { AlumnoDashboard } from "@/src/pages/alumno/AlumnoDashboard";
 import { AlumnoEventos } from "@/src/pages/alumno/AlumnoEventos";
@@ -31,6 +32,7 @@ import { AlumnoPagos } from "@/src/pages/alumno/AlumnoPagos";
 import { AlumnoSoporte } from "@/src/pages/alumno/AlumnoSoporte";
 import { AlumnoAvisos } from "@/src/pages/alumno/AlumnoAvisos";
 import { AlumnoProgreso } from "@/src/pages/alumno/AlumnoProgreso";
+import { AlumnoSocial } from "@/src/pages/alumno/AlumnoSocial";
 
 import { Academia } from "@/src/pages/public/Academia";
 import { AcademiaInscripcion } from "@/src/pages/public/AcademiaInscripcion";
@@ -39,6 +41,7 @@ import { Producciones } from "@/src/pages/public/Producciones";
 import { Palapa } from "@/src/pages/public/Palapa";
 
 import { MiPerfil } from "@/src/pages/shared/MiPerfil";
+import { SocialProfile } from "@/src/pages/shared/SocialProfile";
 
 import { NotFound } from "@/src/pages/NotFound";
 
@@ -103,6 +106,8 @@ export default function App() {
           <Route path="avisos" element={<Avisos />} />
           <Route path="eventos" element={<Eventos />} />
           <Route path="reportes" element={<Reportes />} />
+          <Route path="social" element={<SocialModeracion />} />
+          <Route path="social/perfil/:studentId" element={<SocialProfile />} />
 
           <Route
             path="configuracion"
@@ -127,6 +132,8 @@ export default function App() {
           <Route index element={<AlumnoDashboard />} />
           <Route path="avisos" element={<AlumnoAvisos />} />
           <Route path="progreso" element={<AlumnoProgreso />} />
+          <Route path="social" element={<AlumnoSocial />} />
+          <Route path="social/perfil/:studentId" element={<SocialProfile />} />
           <Route path="eventos" element={<AlumnoEventos />} />
           <Route path="pagos" element={<AlumnoPagos />} />
           <Route path="soporte" element={<AlumnoSoporte />} />
