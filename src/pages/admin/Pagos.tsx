@@ -563,7 +563,11 @@ export function Pagos() {
       alert("Pago registrado y membresía actualizada.");
     } catch (error) {
       console.error("Error registrando pago:", error);
-      alert("No se pudo registrar el pago.");
+      alert(
+        error instanceof Error
+          ? error.message
+          : "No se pudo registrar el pago.",
+      );
     } finally {
       setSaving(false);
     }
