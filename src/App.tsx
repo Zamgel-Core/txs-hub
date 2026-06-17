@@ -73,7 +73,7 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute allowedRoles={["admin", "moderator"]}>
+            <ProtectedRoute allowedRoles={["admin", "moderator", "staff"]}>
               <AdminLayout />
             </ProtectedRoute>
           }
@@ -84,7 +84,7 @@ export default function App() {
           <Route
             path="grupos"
             element={
-              <ProtectedRoute allowedRoles={["admin", "moderator"]}>
+              <ProtectedRoute allowedRoles={["admin", "moderator", "staff"]}>
                 <Grupos />
               </ProtectedRoute>
             }
@@ -93,20 +93,55 @@ export default function App() {
           <Route
             path="pagos"
             element={
-              <ProtectedRoute allowedRoles={["admin"]}>
+              <ProtectedRoute allowedRoles={["admin", "staff"]}>
                 <Pagos />
               </ProtectedRoute>
             }
           />
 
           <Route path="asistencia" element={<Asistencia />} />
-          <Route path="evaluaciones" element={<Evaluaciones />} />
+          <Route
+            path="evaluaciones"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "moderator"]}>
+                <Evaluaciones />
+              </ProtectedRoute>
+            }
+          />
           <Route path="escaner" element={<EscanerQR />} />
-          <Route path="mensajes" element={<Mensajes />} />
+          <Route
+            path="mensajes"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "moderator"]}>
+                <Mensajes />
+              </ProtectedRoute>
+            }
+          />
           <Route path="avisos" element={<Avisos />} />
-          <Route path="eventos" element={<Eventos />} />
-          <Route path="reportes" element={<Reportes />} />
-          <Route path="social" element={<SocialModeracion />} />
+          <Route
+            path="eventos"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "moderator"]}>
+                <Eventos />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reportes"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "moderator"]}>
+                <Reportes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="social"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "moderator", "staff"]}>
+                <SocialModeracion />
+              </ProtectedRoute>
+            }
+          />
           <Route path="social/perfil/:studentId" element={<SocialProfile />} />
 
           <Route

@@ -54,64 +54,73 @@ export function AdminLayout() {
         setRole(data.role);
       }
 
-      setProfileName(data?.full_name || data?.email || (data?.role === "moderator" ? "Moderador TXS" : "Admin TXS"));
+      const fallbackName =
+        data?.role === "moderator"
+          ? "Moderador TXS"
+          : data?.role === "staff"
+            ? "Staff TXS"
+            : "Admin TXS";
+
+      setProfileName(data?.full_name || data?.email || fallbackName);
       setAvatarUrl(data?.avatar_url || null);
     }
 
     loadRole();
   }, []);
 
+  const adminNavItems = [
+    { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
+    { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
+    { name: "Alumnos", path: "/admin/alumnos", icon: Users },
+    { name: "Grupos", path: "/admin/grupos", icon: Users },
+    { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
+    { name: "Asistencia", path: "/admin/asistencia", icon: CalendarCheck },
+    { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
+    { name: "Evaluaciones", path: "/admin/evaluaciones", icon: ClipboardCheck },
+    { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
+    { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
+    { name: "Eventos", path: "/admin/eventos", icon: Calendar },
+    { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
+    { name: "TXS Social", path: "/admin/social", icon: ShieldCheck },
+    { name: "Configuración", path: "/admin/configuracion", icon: Settings },
+  ];
+
+  const moderatorNavItems = [
+    { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
+    { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
+    { name: "Alumnos", path: "/admin/alumnos", icon: Users },
+    { name: "Grupos", path: "/admin/grupos", icon: Users },
+    { name: "Asistencia", path: "/admin/asistencia", icon: CalendarCheck },
+    { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
+    { name: "Evaluaciones", path: "/admin/evaluaciones", icon: ClipboardCheck },
+    { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
+    { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
+    { name: "Eventos", path: "/admin/eventos", icon: Calendar },
+    { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
+    { name: "TXS Social", path: "/admin/social", icon: ShieldCheck },
+  ];
+
+  const staffNavItems = [
+    { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
+    { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
+    { name: "Alumnos", path: "/admin/alumnos", icon: Users },
+    { name: "Grupos", path: "/admin/grupos", icon: Users },
+    { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
+    { name: "Asistencia", path: "/admin/asistencia", icon: CalendarCheck },
+    { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
+    { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
+    { name: "TXS Social", path: "/admin/social", icon: ShieldCheck },
+  ];
+
   const navItems =
-    role === "moderator"
-      ? [
-          { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
-          { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
-          { name: "Alumnos", path: "/admin/alumnos", icon: Users },
-          { name: "Grupos", path: "/admin/grupos", icon: Users },
-          {
-            name: "Asistencia",
-            path: "/admin/asistencia",
-            icon: CalendarCheck,
-          },
-          { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
-          {
-            name: "Evaluaciones",
-            path: "/admin/evaluaciones",
-            icon: ClipboardCheck,
-          },
-          { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
-          { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
-          { name: "Eventos", path: "/admin/eventos", icon: Calendar },
-          { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
-          { name: "TXS Social", path: "/admin/social", icon: ShieldCheck },
-        ]
-      : [
-          { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
-          { name: "Mi Perfil", path: "/admin/perfil", icon: UserCircle },
-          { name: "Alumnos", path: "/admin/alumnos", icon: Users },
-          { name: "Grupos", path: "/admin/grupos", icon: Users },
-          { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
-          {
-            name: "Asistencia",
-            path: "/admin/asistencia",
-            icon: CalendarCheck,
-          },
-          {
-            name: "Evaluaciones",
-            path: "/admin/evaluaciones",
-            icon: ClipboardCheck,
-          },
-          { name: "Mensajes", path: "/admin/mensajes", icon: Mail },
-          { name: "Avisos", path: "/admin/avisos", icon: Megaphone },
-          { name: "Eventos", path: "/admin/eventos", icon: Calendar },
-          { name: "Reportes", path: "/admin/reportes", icon: FileBarChart },
-          { name: "TXS Social", path: "/admin/social", icon: ShieldCheck },
-          {
-            name: "Configuración",
-            path: "/admin/configuracion",
-            icon: Settings,
-          },
-        ];
+    role === "staff"
+      ? staffNavItems
+      : role === "moderator"
+        ? moderatorNavItems
+        : adminNavItems;
+
+  const roleLabel =
+    role === "staff" ? "STAFF" : role === "moderator" ? "MOD" : "ADMIN";
 
   return (
     <div className="min-h-screen bg-txs-black flex">
@@ -138,7 +147,7 @@ export function AdminLayout() {
             />
 
             <span className="font-display font-bold text-lg tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-r from-gold-400 to-gold-600 relative z-10 ml-3 hidden md:block lg:hidden xl:block">
-              {role === "moderator" ? "MOD" : "ADMIN"}
+              {roleLabel}
             </span>
           </div>
 

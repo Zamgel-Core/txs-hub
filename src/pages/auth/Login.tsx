@@ -202,7 +202,8 @@ Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por
       if (
         selectedRole === "admin" &&
         profile.role !== "admin" &&
-        profile.role !== "moderator"
+        profile.role !== "moderator" &&
+        profile.role !== "staff"
       ) {
         await supabase.auth.signOut();
         throw new Error("Este usuario no pertenece al portal admin.");
@@ -213,7 +214,11 @@ Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por
         throw new Error("Este usuario no pertenece al portal alumno.");
       }
 
-      if (profile.role === "admin" || profile.role === "moderator") {
+      if (
+        profile.role === "admin" ||
+        profile.role === "moderator" ||
+        profile.role === "staff"
+      ) {
         navigate("/admin");
         return;
       }

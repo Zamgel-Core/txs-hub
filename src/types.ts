@@ -1,4 +1,4 @@
-export type Role = "admin" | "moderator" | "alumno";
+export type Role = "admin" | "moderator" | "staff" | "alumno";
 
 export type EstadoAlumno = "Pagado" | "Pendiente" | "Vencido" | "Inactivo";
 
