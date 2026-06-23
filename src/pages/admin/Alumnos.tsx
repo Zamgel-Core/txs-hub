@@ -83,6 +83,17 @@ const emptyForm = {
   payment_notes: "",
 };
 
+type AnnualFeeMode = "paid_now" | "already_paid";
+
+const emptyAnnualFeeForm = {
+  mode: "already_paid" as AnnualFeeMode,
+  amount: "150",
+  method: "Efectivo",
+  paidAt: new Date().toISOString().slice(0, 10),
+  expiresAt: getCurrentYearEndDate(),
+  notes: "",
+};
+
 function formatDateLocal(date?: string | null) {
   if (!date) return "Sin fecha";
 
@@ -200,6 +211,11 @@ export function Alumnos() {
     null,
   );
   const [detailsStudent, setDetailsStudent] = useState<Student | null>(null);
+  const [annualFeeStudent, setAnnualFeeStudent] = useState<Student | null>(
+    null,
+  );
+  const [annualFeeForm, setAnnualFeeForm] = useState(emptyAnnualFeeForm);
+  const [savingAnnualFee, setSavingAnnualFee] = useState(false);
 
   useEffect(() => {
     loadStudents();
@@ -485,27 +501,55 @@ export function Alumnos() {
       setSaving(false);
     }
   }
-  async function handleRegisterAnnualFee(student: Student) {
-    const confirmed = window.confirm(
-      `¿Registrar anualidad de $150 para ${student.full_name}?`,
-    );
-
-    if (!confirmed) return;
-
+  function openAnnualFeeModal(student: Student) {
     const today = new Date().toISOString().slice(0, 10);
-    const expiresAt = getCurrentYearEndDate();
+
+    const paidAt = normalizeDateInput(student.annual_fee_paid_at) || today;
+
+    const expiresAt =
+      normalizeDateInput(student.annual_fee_expires_at) ||
+      getCurrentYearEndDate();
+
+    setAnnualFeeStudent(student);
+
+    setAnnualFeeForm({
+      mode: "already_paid",
+      amount: String(Number(student.annual_fee_amount || 150)),
+      method: "Efectivo",
+      paidAt,
+      expiresAt,
+      notes: "",
+    });
+  }
+
+  async function handleRegisterAnnualFee() {
+    if (!annualFeeStudent) return;
+
+    const amount = Number(annualFeeForm.amount || 0);
+
+    if (!annualFeeForm.paidAt || !annualFeeForm.expiresAt) {
+      alert("Completa fecha de pago y vencimiento.");
+      return;
+    }
+
+    if (!amount || amount <= 0) {
+      alert("Ingresa un monto válido.");
+      return;
+    }
 
     try {
+      setSavingAnnualFee(true);
+
       const { error: studentError } = await supabase
         .from("students")
         .update({
           annual_fee_status: "active",
-          annual_fee_paid_at: today,
-          annual_fee_expires_at: expiresAt,
-          annual_fee_amount: 150,
+          annual_fee_paid_at: annualFeeForm.paidAt,
+          annual_fee_expires_at: annualFeeForm.expiresAt,
+          annual_fee_amount: amount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", student.id);
+        .eq("id", annualFeeStudent.id);
 
       if (studentError) {
         console.error(studentError);
@@ -513,26 +557,46 @@ export function Alumnos() {
         return;
       }
 
-      const { error: paymentError } = await supabase.from("payments").insert({
-        student_id: student.id,
-        payment_date: today,
-        concept: "annual_fee",
-        method: "Efectivo",
-        amount: 150,
-        status: "paid",
-        notes: `Anualidad ${new Date().getFullYear()} TXS. Vence ${expiresAt}.`,
-      });
+      if (annualFeeForm.mode === "paid_now") {
+        const { error: paymentError } = await supabase.from("payments").insert({
+          student_id: annualFeeStudent.id,
+          payment_date: annualFeeForm.paidAt,
+          concept: "annual_fee",
+          method: annualFeeForm.method,
+          amount,
+          status: "paid",
+          notes:
+            annualFeeForm.notes.trim() ||
+            `Anualidad ${new Date().getFullYear()} TXS. Vence ${annualFeeForm.expiresAt}.`,
+        });
 
-      if (paymentError) {
-        console.error(paymentError);
-        alert("Anualidad actualizada, pero no se pudo guardar el pago.");
+        if (paymentError) {
+          console.error(paymentError);
+          alert("Anualidad actualizada, pero no se pudo guardar el ingreso.");
+        }
+      } else {
+        await supabase
+          .from("student_points_ledger")
+          .delete()
+          .eq("student_id", annualFeeStudent.id)
+          .eq("source_type", "annual_fee")
+          .eq("source_id", `${annualFeeStudent.id}:${annualFeeForm.paidAt}`);
       }
 
       await loadStudents();
-      alert("Anualidad registrada correctamente.");
+      setAnnualFeeStudent(null);
+      setAnnualFeeForm(emptyAnnualFeeForm);
+
+      alert(
+        annualFeeForm.mode === "paid_now"
+          ? "Anualidad registrada con ingreso correctamente."
+          : "Anualidad marcada como pagada anteriormente sin afectar ingresos.",
+      );
     } catch (err) {
       console.error(err);
       alert("Ocurrió un error registrando la anualidad.");
+    } finally {
+      setSavingAnnualFee(false);
     }
   }
 
@@ -786,7 +850,7 @@ export function Alumnos() {
                             </button>
 
                             <button
-                              onClick={() => handleRegisterAnnualFee(student)}
+                              onClick={() => openAnnualFeeModal(student)}
                               title="Registrar anualidad"
                               aria-label="Registrar anualidad"
                               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all"
@@ -975,7 +1039,7 @@ export function Alumnos() {
                     </button>
 
                     <button
-                      onClick={() => handleRegisterAnnualFee(student)}
+                      onClick={() => openAnnualFeeModal(student)}
                       className="w-full h-11 rounded-xl border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-black font-bold flex items-center justify-center gap-2 transition-all"
                     >
                       <CreditCard size={16} />
@@ -1388,6 +1452,210 @@ export function Alumnos() {
                   )}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {annualFeeStudent && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-[#090909] border border-emerald-500/20 rounded-3xl">
+            <div className="flex items-center justify-between px-5 sm:px-8 py-6 border-b border-zinc-900">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-black">
+                  Registrar anualidad
+                </h2>
+                <p className="text-zinc-500 mt-1">
+                  {annualFeeStudent.full_name}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setAnnualFeeStudent(null)}
+                className="w-11 h-11 rounded-xl border border-zinc-800 flex items-center justify-center hover:border-red-500/40 transition-all shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-8 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAnnualFeeForm((current) => ({
+                      ...current,
+                      mode: "already_paid",
+                    }))
+                  }
+                  className={`rounded-2xl border p-4 text-left transition-all ${
+                    annualFeeForm.mode === "already_paid"
+                      ? "border-emerald-500/60 bg-emerald-500/10"
+                      : "border-zinc-800 bg-black/30 hover:border-emerald-500/30"
+                  }`}
+                >
+                  <p className="font-bold text-white">
+                    Ya pagada anteriormente
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Activa la anualidad sin crear ingreso ni afectar reportes.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAnnualFeeForm((current) => ({
+                      ...current,
+                      mode: "paid_now",
+                    }))
+                  }
+                  className={`rounded-2xl border p-4 text-left transition-all ${
+                    annualFeeForm.mode === "paid_now"
+                      ? "border-yellow-500/60 bg-yellow-500/10"
+                      : "border-zinc-800 bg-black/30 hover:border-yellow-500/30"
+                  }`}
+                >
+                  <p className="font-bold text-white">Pagada en este momento</p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Activa la anualidad y registra el ingreso de caja.
+                  </p>
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                <p className="text-sm text-zinc-400">
+                  {annualFeeForm.mode === "paid_now"
+                    ? "Este registro sí se reflejará en ingresos y reportes financieros."
+                    : "Este registro solo actualiza el estado de anualidad del alumno. No crea pago ni ingreso."}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Monto
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={annualFeeForm.amount}
+                    onChange={(event) =>
+                      setAnnualFeeForm((current) => ({
+                        ...current,
+                        amount: event.target.value,
+                      }))
+                    }
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Método
+                  </label>
+                  <select
+                    value={annualFeeForm.method}
+                    onChange={(event) =>
+                      setAnnualFeeForm((current) => ({
+                        ...current,
+                        method: event.target.value,
+                      }))
+                    }
+                    disabled={annualFeeForm.mode === "already_paid"}
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40 disabled:opacity-50"
+                  >
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="Tarjeta">Tarjeta</option>
+                    <option value="Otro">Otro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Fecha de pago
+                  </label>
+                  <input
+                    type="date"
+                    value={annualFeeForm.paidAt}
+                    onChange={(event) =>
+                      setAnnualFeeForm((current) => ({
+                        ...current,
+                        paidAt: event.target.value,
+                      }))
+                    }
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm text-zinc-500 mb-2 block">
+                    Vencimiento
+                  </label>
+                  <input
+                    type="date"
+                    value={annualFeeForm.expiresAt}
+                    onChange={(event) =>
+                      setAnnualFeeForm((current) => ({
+                        ...current,
+                        expiresAt: event.target.value,
+                      }))
+                    }
+                    className="w-full bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-500 mb-2 block">
+                  Notas
+                </label>
+                <textarea
+                  value={annualFeeForm.notes}
+                  onChange={(event) =>
+                    setAnnualFeeForm((current) => ({
+                      ...current,
+                      notes: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  placeholder={
+                    annualFeeForm.mode === "paid_now"
+                      ? "Ej. Anualidad pagada en recepción."
+                      : "Ej. Pagada al inicio de año, solo se marca en sistema."
+                  }
+                  className="w-full resize-none bg-[#111111] border border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-yellow-500/40"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 sm:px-8 py-6 border-t border-zinc-900 flex flex-col sm:flex-row justify-end gap-4">
+              <button
+                onClick={() => setAnnualFeeStudent(null)}
+                className="px-6 py-3 border border-zinc-800 rounded-xl hover:border-red-500/40 transition-all"
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={handleRegisterAnnualFee}
+                disabled={savingAnnualFee}
+                className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+              >
+                {savingAnnualFee ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard size={18} />
+                    Guardar anualidad
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

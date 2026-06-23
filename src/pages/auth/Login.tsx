@@ -1,11 +1,12 @@
 // 📍 Ruta del archivo: src/pages/auth/Login.tsx
 
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent } from "react";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 import { Card, CardContent } from "@/src/components/ui/Card";
 import {
+  CalendarDays,
   Eye,
   EyeOff,
   Users,
@@ -16,6 +17,15 @@ import { motion } from "motion/react";
 import { supabase } from "@/src/lib/supabase";
 
 const TXS_WHATSAPP_NUMBER = "528991019210";
+const MORE_INFO_OPTION = "more_info";
+
+type PublicRegistrationGroup = {
+  group_id: string;
+  days: string | null;
+  schedule: string | null;
+  sort_order: number | null;
+  public_label: string;
+};
 
 function normalizePhone(value: string) {
   return value.replace(/[^0-9+]/g, "").trim();
@@ -26,11 +36,13 @@ function buildRegistrationMessage({
   email,
   phone,
   password,
+  preferredScheduleLabel,
 }: {
   fullName: string;
   email: string;
   phone: string;
   password: string;
+  preferredScheduleLabel: string;
 }) {
   return `Hola TXS Academy.
 
@@ -42,6 +54,9 @@ ${fullName}
 Teléfono:
 ${phone}
 
+Horario deseado:
+${preferredScheduleLabel}
+
 Correo:
 ${email}
 
@@ -49,6 +64,16 @@ Contraseña solicitada:
 ${password}
 
 Quedo pendiente de validación por administración.`;
+}
+
+function getScheduleLabel(group: PublicRegistrationGroup) {
+  if (group.public_label?.trim()) return group.public_label.trim();
+
+  const parts = [group.days, group.schedule]
+    .map((value) => value?.trim())
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" · ") : "Horario TXS";
 }
 
 export function Login() {
@@ -68,12 +93,55 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  const [preferredSchedule, setPreferredSchedule] = useState("");
+  const [publicGroups, setPublicGroups] = useState<PublicRegistrationGroup[]>(
+    [],
+  );
+  const [loadingGroups, setLoadingGroups] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  const selectedScheduleLabel = useMemo(() => {
+    if (preferredSchedule === MORE_INFO_OPTION) {
+      return "Quiero más información / No estoy seguro";
+    }
+
+    const group = publicGroups.find(
+      (item) => item.group_id === preferredSchedule,
+    );
+
+    return group ? getScheduleLabel(group) : "";
+  }, [preferredSchedule, publicGroups]);
 
   useEffect(() => {
     setMode(searchParams.get("mode") === "register" ? "register" : "login");
   }, [searchParams]);
+
+  useEffect(() => {
+    if (mode !== "register") return;
+
+    loadPublicGroups();
+  }, [mode]);
+
+  async function loadPublicGroups() {
+    try {
+      setLoadingGroups(true);
+
+      const { data, error } = await supabase.rpc(
+        "get_public_registration_groups",
+      );
+
+      if (error) throw error;
+
+      setPublicGroups((data || []) as PublicRegistrationGroup[]);
+    } catch (error) {
+      console.error("Error cargando horarios públicos:", error);
+      setPublicGroups([]);
+    } finally {
+      setLoadingGroups(false);
+    }
+  }
 
   function changeMode(nextMode: "login" | "register") {
     setMode(nextMode);
@@ -103,6 +171,10 @@ export function Login() {
           throw new Error("Completa nombre, teléfono, correo y contraseña.");
         }
 
+        if (!preferredSchedule) {
+          throw new Error("Selecciona un horario deseado o elige más información.");
+        }
+
         if (cleanPassword.length < 6) {
           throw new Error("La contraseña debe tener mínimo 6 caracteres.");
         }
@@ -112,6 +184,7 @@ export function Login() {
           email: cleanEmail,
           phone: cleanPhone,
           password: cleanPassword,
+          preferredScheduleLabel: selectedScheduleLabel,
         });
 
         const internalMessage = `Nueva solicitud de registro desde el portal público.
@@ -122,6 +195,9 @@ ${cleanFullName}
 Teléfono:
 ${cleanPhone}
 
+Horario deseado:
+${selectedScheduleLabel}
+
 Correo:
 ${cleanEmail}
 
@@ -129,7 +205,7 @@ Contraseña solicitada:
 ${cleanPassword}
 
 Acción sugerida:
-Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por WhatsApp.`;
+Revisar la solicitud, crear o validar al alumno en Supabase/Auth, asignar el grupo correcto y responder por WhatsApp.`;
 
         const { error: messageError } = await supabase.from("messages").insert({
           student_id: null,
@@ -161,6 +237,7 @@ Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por
         );
         setFullName("");
         setPhone("");
+        setPreferredSchedule("");
         setEmail("");
         setPassword("");
         setLoading(false);
@@ -356,6 +433,46 @@ Revisar la solicitud, crear o validar al alumno en Supabase/Auth y responder por
                       onChange={(e) => setPhone(e.target.value)}
                       required
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
+                      Horario deseado
+                    </label>
+
+                    <div className="relative">
+                      <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                      <select
+                        value={preferredSchedule}
+                        onChange={(event) =>
+                          setPreferredSchedule(event.target.value)
+                        }
+                        required
+                        disabled={loadingGroups}
+                        className="h-12 w-full appearance-none rounded-xl border border-zinc-800 bg-zinc-950 px-10 pr-4 text-sm text-white outline-none transition focus:border-gold-500/50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <option value="">
+                          {loadingGroups
+                            ? "Cargando horarios..."
+                            : "Selecciona un horario..."}
+                        </option>
+
+                        {publicGroups.map((group) => (
+                          <option key={group.group_id} value={group.group_id}>
+                            {getScheduleLabel(group)}
+                          </option>
+                        ))}
+
+                        <option value={MORE_INFO_OPTION}>
+                          Quiero más información / No estoy seguro
+                        </option>
+                      </select>
+                    </div>
+
+                    <p className="text-xs text-zinc-500">
+                      Solo se muestra el horario público; el nivel interno lo
+                      asigna TXS.
+                    </p>
                   </div>
                 </>
               )}
