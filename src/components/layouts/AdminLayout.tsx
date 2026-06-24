@@ -18,6 +18,7 @@ import {
   QrCode,
   ClipboardCheck,
   ShieldCheck,
+  ShoppingBag,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -74,6 +75,7 @@ export function AdminLayout() {
     { name: "Alumnos", path: "/admin/alumnos", icon: Users },
     { name: "Grupos", path: "/admin/grupos", icon: Users },
     { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
+    { name: "Tienda", path: "/admin/tienda", icon: ShoppingBag },
     { name: "Asistencia", path: "/admin/asistencia", icon: CalendarCheck },
     { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
     { name: "Evaluaciones", path: "/admin/evaluaciones", icon: ClipboardCheck },
@@ -106,6 +108,7 @@ export function AdminLayout() {
     { name: "Alumnos", path: "/admin/alumnos", icon: Users },
     { name: "Grupos", path: "/admin/grupos", icon: Users },
     { name: "Pagos", path: "/admin/pagos", icon: CreditCard },
+    { name: "Tienda", path: "/admin/tienda", icon: ShoppingBag },
     { name: "Asistencia", path: "/admin/asistencia", icon: CalendarCheck },
     { name: "Escáner QR", path: "/admin/escaner", icon: QrCode },
     { name: "Avisos", path: "/admin/avisos", icon: Megaphone },

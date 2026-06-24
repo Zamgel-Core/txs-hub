@@ -25,6 +25,7 @@ import { Configuracion } from "@/src/pages/admin/Configuracion";
 import { Mensajes } from "@/src/pages/admin/Mensajes";
 import { Evaluaciones } from "@/src/pages/admin/Evaluaciones";
 import { SocialModeracion } from "@/src/pages/admin/SocialModeracion";
+import { Tienda } from "@/src/pages/admin/Tienda";
 
 import { AlumnoDashboard } from "@/src/pages/alumno/AlumnoDashboard";
 import { AlumnoEventos } from "@/src/pages/alumno/AlumnoEventos";
@@ -100,6 +101,14 @@ export default function App() {
           />
 
           <Route path="asistencia" element={<Asistencia />} />
+          <Route
+            path="tienda"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "staff"]}>
+                <Tienda />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="evaluaciones"
             element={
