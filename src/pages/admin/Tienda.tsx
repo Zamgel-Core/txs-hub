@@ -8,11 +8,14 @@ import {
   CalendarClock,
   CreditCard,
   DollarSign,
+  FileSpreadsheet,
   Droplets,
   Loader2,
   PackagePlus,
   Plus,
   RefreshCcw,
+  TrendingUp,
+  Zap,
   Save,
   Search,
   Shirt,
@@ -25,6 +28,7 @@ import { Card, CardContent } from "@/src/components/ui/Card";
 import {
   adjustStoreInventory,
   createStoreProduct,
+  exportStoreExcel,
   getStoreData,
   registerStoreSale,
   StoreBuyerStudent,
@@ -59,6 +63,20 @@ function toDateTimeLocal(date = new Date()) {
   const offset = date.getTimezoneOffset();
   const local = new Date(date.getTime() - offset * 60 * 1000);
   return local.toISOString().slice(0, 16);
+}
+
+function toDateInput(date = new Date()) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(0, 10);
+}
+
+function getMonthStartInput(date = new Date()) {
+  return toDateInput(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+function getMonthEndInput(date = new Date()) {
+  return toDateInput(new Date(date.getFullYear(), date.getMonth() + 1, 0));
 }
 
 function getCategoryLabel(category: StoreCategory) {
@@ -112,6 +130,23 @@ type InventoryForm = {
   reason: string;
 };
 
+
+function getStockStatus(product: StoreProduct) {
+  if (!product.is_active) {
+    return { label: "Inactivo", tone: "red" as const, message: "Producto desactivado." };
+  }
+
+  if (product.stock <= 0) {
+    return { label: "Agotado", tone: "red" as const, message: "Producto agotado." };
+  }
+
+  if (product.stock <= product.min_stock) {
+    return { label: "Bajo", tone: "yellow" as const, message: "Stock bajo. Considera reponer inventario." };
+  }
+
+  return { label: "Correcto", tone: "emerald" as const, message: "Stock suficiente." };
+}
+
 const emptyProductForm: ProductForm = {
   name: "",
   category: "bebida",
@@ -148,10 +183,15 @@ function createInventoryForm(productId = ""): InventoryForm {
 export function Tienda() {
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [recentSales, setRecentSales] = useState<StoreSale[]>([]);
+  const [monthlySales, setMonthlySales] = useState<StoreSale[]>([]);
   const [movements, setMovements] = useState<StoreInventoryMovement[]>([]);
   const [students, setStudents] = useState<StoreBuyerStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState(getMonthStartInput());
+  const [exportEndDate, setExportEndDate] = useState(getMonthEndInput());
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | StoreCategory>("all");
 
@@ -185,33 +225,51 @@ export function Tienda() {
 
   const stats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
-    const monthKey = new Date().toISOString().slice(0, 7);
 
-    const todaySales = recentSales.filter((sale) =>
+    const todaySales = monthlySales.filter((sale) =>
       new Date(sale.sale_date).toISOString().startsWith(todayKey),
     );
 
-    const monthSales = recentSales.filter((sale) =>
-      new Date(sale.sale_date).toISOString().startsWith(monthKey),
-    );
+    const getEstimatedProfit = (sales: StoreSale[]) => {
+      return sales.reduce((sum, sale) => {
+        const unitCost = Number(sale.store_products?.cost || 0);
+        const quantity = Number(sale.quantity || 0);
+        const revenue = Number(sale.total_amount || 0);
+
+        return sum + (revenue - unitCost * quantity);
+      }, 0);
+    };
 
     return {
       products: products.length,
       activeProducts: activeProducts.length,
       totalStock: products.reduce((sum, product) => sum + Number(product.stock || 0), 0),
       lowStock: products.filter(
-        (product) => product.is_active && product.stock <= product.min_stock,
+        (product) =>
+          product.is_active &&
+          product.stock > 0 &&
+          product.stock <= product.min_stock,
       ).length,
+      outOfStock: products.filter(
+        (product) => product.is_active && product.stock <= 0,
+      ).length,
+      inventoryValue: products.reduce(
+        (sum, product) =>
+          sum + Number(product.cost || 0) * Number(product.stock || 0),
+        0,
+      ),
       todayRevenue: todaySales.reduce(
         (sum, sale) => sum + Number(sale.total_amount || 0),
         0,
       ),
-      monthRevenue: monthSales.reduce(
+      monthRevenue: monthlySales.reduce(
         (sum, sale) => sum + Number(sale.total_amount || 0),
         0,
       ),
+      todayProfit: getEstimatedProfit(todaySales),
+      monthProfit: getEstimatedProfit(monthlySales),
     };
-  }, [activeProducts.length, products, recentSales]);
+  }, [activeProducts.length, monthlySales, products]);
 
   const selectedSaleProduct = useMemo(
     () => products.find((product) => product.id === saleForm.productId) || null,
@@ -221,6 +279,15 @@ export function Tienda() {
   const selectedInventoryProduct = useMemo(
     () => products.find((product) => product.id === inventoryForm.productId) || null,
     [inventoryForm.productId, products],
+  );
+
+
+  const quickSaleProducts = useMemo(
+    () =>
+      activeProducts.filter(
+        (product) => product.category === "bebida" && product.stock > 0,
+      ),
+    [activeProducts],
   );
 
   useEffect(() => {
@@ -233,6 +300,7 @@ export function Tienda() {
       const data = await getStoreData();
       setProducts(data.products);
       setRecentSales(data.recentSales);
+      setMonthlySales(data.monthlySales);
       setMovements(data.movements);
       setStudents(data.students);
     } catch (error) {
@@ -276,6 +344,26 @@ export function Tienda() {
   function openInventoryModal(product?: StoreProduct) {
     setInventoryForm(createInventoryForm(product?.id || ""));
     setShowInventoryModal(true);
+  }
+
+  async function handleExportExcel() {
+    try {
+      setExporting(true);
+      await exportStoreExcel({
+        startDate: exportStartDate || undefined,
+        endDate: exportEndDate || undefined,
+      });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error("Error exportando tienda:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "No se pudo exportar la tienda.",
+      );
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function handleSaveProduct() {
@@ -330,6 +418,41 @@ export function Tienda() {
         error instanceof Error
           ? error.message
           : "No se pudo guardar el producto.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleQuickSale(product: StoreProduct) {
+    if (!product.is_active || product.stock <= 0) return;
+
+    const confirmed = window.confirm(
+      `¿Registrar venta rápida de ${getProductDisplayName(product)} por ${formatCurrency(product.price)} en efectivo?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSaving(true);
+
+      await registerStoreSale({
+        productId: product.id,
+        quantity: 1,
+        studentId: null,
+        buyerName: "Venta general",
+        paymentMethod: "efectivo",
+        saleDate: new Date().toISOString(),
+        notes: "Venta rápida",
+      });
+
+      await loadStore();
+    } catch (error) {
+      console.error("Error registrando venta rápida:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "No se pudo registrar la venta rápida.",
       );
     } finally {
       setSaving(false);
@@ -481,6 +604,19 @@ export function Tienda() {
               <RefreshCcw className="h-4 w-4" />
               Actualizar
             </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => setShowExportModal(true)}
+              disabled={exporting}
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-4 w-4" />
+              )}
+              Exportar Excel
+            </Button>
             <Button variant="outline" className="gap-2" onClick={() => openInventoryModal()}>
               <Boxes className="h-4 w-4" />
               Inventario
@@ -492,13 +628,43 @@ export function Tienda() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
           <StatCard label="Productos" value={stats.products} icon={ShoppingBag} />
           <StatCard label="Activos" value={stats.activeProducts} icon={Archive} tone="emerald" />
           <StatCard label="Stock total" value={stats.totalStock} icon={Boxes} />
+          <StatCard label="Agotados" value={stats.outOfStock} icon={AlertTriangle} tone={stats.outOfStock > 0 ? "red" : "emerald"} />
           <StatCard label="Stock bajo" value={stats.lowStock} icon={AlertTriangle} tone={stats.lowStock > 0 ? "red" : "emerald"} />
-          <StatCard label="Ventas hoy" value={formatCurrency(stats.todayRevenue)} icon={DollarSign} tone="yellow" />
+          <StatCard label="Valor inventario" value={formatCurrency(stats.inventoryValue)} icon={Archive} />
           <StatCard label="Ventas mes" value={formatCurrency(stats.monthRevenue)} icon={CreditCard} tone="sky" />
+          <StatCard label="Ganancia mes" value={formatCurrency(stats.monthProfit)} icon={TrendingUp} tone="emerald" />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <StatCard label="Ventas hoy" value={formatCurrency(stats.todayRevenue)} icon={DollarSign} tone="yellow" />
+          <StatCard label="Ganancia hoy" value={formatCurrency(stats.todayProfit)} icon={TrendingUp} tone="emerald" />
+          <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+            <div className="mb-3 flex items-center gap-2 text-yellow-400">
+              <Zap className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase tracking-[0.16em]">Venta rápida</p>
+            </div>
+            {quickSaleProducts.length === 0 ? (
+              <p className="text-sm text-zinc-500">No hay bebidas con stock disponible.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {quickSaleProducts.slice(0, 4).map((product) => (
+                  <Button
+                    key={product.id}
+                    size="sm"
+                    variant="gold"
+                    onClick={() => handleQuickSale(product)}
+                    disabled={saving}
+                  >
+                    + {product.name}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -550,14 +716,16 @@ export function Tienda() {
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {filteredProducts.map((product) => {
                   const Icon = getProductIcon(product.category);
-                  const lowStock = product.stock <= product.min_stock;
+                  const stockStatus = getStockStatus(product);
+                  const lowStock = product.is_active && product.stock > 0 && product.stock <= product.min_stock;
+                  const outOfStock = product.is_active && product.stock <= 0;
 
                   return (
                     <div
                       key={product.id}
                       className={`rounded-2xl border bg-zinc-950/60 p-4 transition ${
                         product.is_active
-                          ? lowStock
+                          ? outOfStock || lowStock
                             ? "border-red-500/30"
                             : "border-zinc-800 hover:border-yellow-500/30"
                           : "border-zinc-800 opacity-60"
@@ -599,14 +767,14 @@ export function Tienda() {
                         <MiniMetric label="Mínimo" value={product.min_stock} />
                         <MiniMetric
                           label="Estado"
-                          value={product.is_active ? "Activo" : "Inactivo"}
-                          tone={product.is_active ? "emerald" : "red"}
+                          value={stockStatus.label}
+                          tone={stockStatus.tone}
                         />
                       </div>
 
-                      {lowStock && product.is_active && (
+                      {(outOfStock || lowStock) && (
                         <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300">
-                          Stock bajo. Considera reponer inventario.
+                          {stockStatus.message}
                         </div>
                       )}
 
@@ -619,6 +787,16 @@ export function Tienda() {
                         >
                           Vender
                         </Button>
+                        {product.category === "bebida" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleQuickSale(product)}
+                            disabled={!product.is_active || product.stock <= 0 || saving}
+                          >
+                            Rápida
+                          </Button>
+                        )}
                         <Button size="sm" variant="outline" onClick={() => openInventoryModal(product)}>
                           Inventario
                         </Button>
@@ -651,7 +829,9 @@ export function Tienda() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-white">
-                          {sale.store_products?.name || "Producto"}
+                          {sale.store_products?.variant_label
+                            ? `${sale.store_products.name} · ${sale.store_products.variant_label}`
+                            : sale.store_products?.name || "Producto"}
                         </p>
                         <p className="text-xs text-zinc-500">
                           {sale.quantity} pza(s) · {sale.payment_method}
@@ -663,9 +843,18 @@ export function Tienda() {
                           {formatDateTime(sale.sale_date)}
                         </p>
                       </div>
-                      <span className="font-black text-emerald-400">
-                        {formatCurrency(sale.total_amount)}
-                      </span>
+                      <div className="text-right">
+                        <p className="font-black text-emerald-400">
+                          {formatCurrency(sale.total_amount)}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          Gan. est. {formatCurrency(
+                            Number(sale.total_amount || 0) -
+                              Number(sale.store_products?.cost || 0) *
+                                Number(sale.quantity || 0),
+                          )}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -719,6 +908,184 @@ export function Tienda() {
           </Card>
         </div>
       </div>
+
+      {showExportModal && (
+        <Modal title="Exportar tienda" onClose={() => setShowExportModal(false)}>
+          <div className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-yellow-500/20 bg-gradient-to-br from-yellow-500/10 via-zinc-900 to-zinc-950 p-5 text-center">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-yellow-500/30 bg-black/40">
+                  <ShoppingBag className="h-7 w-7 text-yellow-400" />
+                </div>
+                <h3 className="text-xl font-black uppercase tracking-[0.12em] text-white">
+                  TXS HUB
+                </h3>
+                <p className="mt-1 text-sm font-semibold uppercase tracking-[0.18em] text-yellow-400">
+                  Reporte de Tienda
+                </p>
+                <p className="mt-3 text-xs text-zinc-400">
+                  Genera un archivo profesional compatible con Excel.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <MiniMetric label="Productos" value={stats.products} />
+                <MiniMetric label="Activos" value={stats.activeProducts} tone="emerald" />
+                <MiniMetric label="Agotados" value={stats.outOfStock} tone={stats.outOfStock > 0 ? "red" : "zinc"} />
+                <MiniMetric label="Stock bajo" value={stats.lowStock} tone={stats.lowStock > 0 ? "yellow" : "zinc"} />
+                <MiniMetric label="Inventario" value={formatCurrency(stats.inventoryValue)} tone="yellow" />
+                <MiniMetric label="Ventas mes" value={formatCurrency(stats.monthRevenue)} tone="emerald" />
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                <p className="mb-3 text-sm font-bold text-white">
+                  Rango del reporte
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <TextInput
+                    label="Desde"
+                    type="date"
+                    value={exportStartDate}
+                    onChange={setExportStartDate}
+                  />
+                  <TextInput
+                    label="Hasta"
+                    type="date"
+                    value={exportEndDate}
+                    onChange={setExportEndDate}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportStartDate(toDateInput());
+                      setExportEndDate(toDateInput());
+                    }}
+                    className="rounded-full border border-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-300 transition hover:border-yellow-500/40 hover:text-yellow-300"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportStartDate(getMonthStartInput());
+                      setExportEndDate(getMonthEndInput());
+                    }}
+                    className="rounded-full border border-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-300 transition hover:border-yellow-500/40 hover:text-yellow-300"
+                  >
+                    Este mes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportStartDate("");
+                      setExportEndDate("");
+                    }}
+                    className="rounded-full border border-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-300 transition hover:border-yellow-500/40 hover:text-yellow-300"
+                  >
+                    Todo
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                <p className="mb-3 text-sm font-bold text-white">El archivo incluirá</p>
+                <ul className="space-y-2 text-sm text-zinc-400">
+                  <li className="flex gap-2"><span className="text-emerald-400">✓</span> Resumen ejecutivo de tienda</li>
+                  <li className="flex gap-2"><span className="text-emerald-400">✓</span> Productos, inventario, costos y valor total</li>
+                  <li className="flex gap-2"><span className="text-emerald-400">✓</span> Ventas dentro del rango seleccionado</li>
+                  <li className="flex gap-2"><span className="text-emerald-400">✓</span> Movimientos de inventario dentro del rango</li>
+                  <li className="flex gap-2"><span className="text-emerald-400">✓</span> Moneda MXN y firma Zamgel Core</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-yellow-400">
+                    Vista previa
+                  </p>
+                  <p className="text-sm text-zinc-500">
+                    Formato profesional para compartir o imprimir.
+                  </p>
+                </div>
+                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-400">
+                  Excel
+                </span>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-white text-zinc-950">
+                <div className="bg-gradient-to-r from-yellow-600 to-yellow-400 px-4 py-2 text-sm font-black text-black">
+                  Tienda TXS
+                </div>
+                <div className="bg-zinc-950 px-5 py-5 text-center text-white">
+                  <p className="text-lg font-black tracking-wide">TXS HUB</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-yellow-400">
+                    Reporte de Tienda
+                  </p>
+                  <p className="mt-2 text-xs text-zinc-400">
+                    {exportStartDate || exportEndDate
+                      ? `${exportStartDate || "Inicio"} - ${exportEndDate || "Hoy"}`
+                      : "Todo el historial"}
+                  </p>
+                </div>
+                <div className="grid grid-cols-4 gap-0 border-b border-zinc-200 text-center">
+                  <div className="p-3">
+                    <p className="text-[10px] font-bold uppercase text-zinc-500">Productos</p>
+                    <p className="font-black">{stats.products}</p>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-[10px] font-bold uppercase text-zinc-500">Stock</p>
+                    <p className="font-black">{stats.totalStock}</p>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-[10px] font-bold uppercase text-zinc-500">Valor</p>
+                    <p className="font-black">{formatCurrency(stats.inventoryValue)}</p>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-[10px] font-bold uppercase text-zinc-500">Mes</p>
+                    <p className="font-black">{formatCurrency(stats.monthRevenue)}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 bg-yellow-500 px-3 py-2 text-[10px] font-black uppercase text-black">
+                  <span>Producto</span>
+                  <span>Categoría</span>
+                  <span>Stock</span>
+                  <span>Estado</span>
+                </div>
+                <div className="px-4 py-5 text-center text-xs text-zinc-500">
+                  El archivo descargado incluye productos, ventas y movimientos completos.
+                </div>
+              </div>
+
+              <div className="mt-5 flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowExportModal(false)}
+                  disabled={exporting}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="gold"
+                  onClick={handleExportExcel}
+                  disabled={exporting}
+                  className="gap-2"
+                >
+                  {exporting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="h-4 w-4" />
+                  )}
+                  Descargar reporte Excel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {showSaleModal && (
         <Modal title="Registrar venta" onClose={() => setShowSaleModal(false)}>
@@ -781,6 +1148,7 @@ export function Tienda() {
                 {students.map((student) => (
                   <option key={student.id} value={student.id}>
                     {student.full_name}
+                    {student.email ? ` · ${student.email}` : ""}
                   </option>
                 ))}
               </select>
@@ -1012,14 +1380,16 @@ function MiniMetric({
 }: {
   label: string;
   value: string | number;
-  tone?: "zinc" | "emerald" | "red";
+  tone?: "zinc" | "emerald" | "red" | "yellow";
 }) {
   const toneClass =
     tone === "emerald"
       ? "text-emerald-400"
       : tone === "red"
         ? "text-red-400"
-        : "text-white";
+        : tone === "yellow"
+          ? "text-yellow-400"
+          : "text-white";
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2">
@@ -1040,7 +1410,7 @@ function Modal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-zinc-800 bg-zinc-950 shadow-2xl">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-800 bg-zinc-950/95 p-5 backdrop-blur">
           <h2 className="text-2xl font-black text-white">{title}</h2>
           <button

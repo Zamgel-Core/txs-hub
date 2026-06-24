@@ -2,11 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  BarChart3,
   CalendarDays,
   Clock,
+  Download,
   Edit,
+  FileSpreadsheet,
   Loader2,
   Plus,
+  RefreshCcw,
   Save,
   UserCheck,
   Users,
@@ -21,6 +25,12 @@ import {
   CardTitle,
 } from "../../components/ui/Card";
 import { supabase } from "../../lib/supabase";
+import {
+  exportGroupsExcel,
+  getGroupsReportData,
+  getGroupsReportPreview,
+  GroupsReportPreview,
+} from "@/src/services/groupsReportService";
 
 type GroupLevel = "principiante" | "intermedio" | "avanzado";
 
@@ -62,6 +72,61 @@ const emptyForm: GroupForm = {
   level: "principiante",
   sort_order: "1",
 };
+
+type ExportFilters = {
+  startDate: string;
+  endDate: string;
+  groupId: string;
+  level: "all" | GroupLevel;
+  includeStudents: boolean;
+  includeAttendance: boolean;
+  includePayments: boolean;
+  includeInactiveStudents: boolean;
+};
+
+function getDateInputValue(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getTodayDate() {
+  return getDateInputValue(new Date());
+}
+
+function getCurrentMonthStart() {
+  const date = new Date();
+  date.setDate(1);
+  date.setHours(0, 0, 0, 0);
+
+  return getDateInputValue(date);
+}
+
+function getDefaultExportFilters(): ExportFilters {
+  return {
+    startDate: getCurrentMonthStart(),
+    endDate: getTodayDate(),
+    groupId: "",
+    level: "all",
+    includeStudents: true,
+    includeAttendance: true,
+    includePayments: true,
+    includeInactiveStudents: false,
+  };
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  }).format(value || 0);
+}
+
+function formatShortDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
 
 function getLevelLabel(level: GroupLevel) {
   if (level === "principiante") return "Principiante";
@@ -105,6 +170,15 @@ export function Grupos() {
   const [studentsModalGroup, setStudentsModalGroup] = useState<Group | null>(
     null,
   );
+
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState<ExportFilters>(
+    getDefaultExportFilters(),
+  );
+  const [exportPreview, setExportPreview] =
+    useState<GroupsReportPreview | null>(null);
+  const [loadingExportPreview, setLoadingExportPreview] = useState(false);
+  const [exportingGroups, setExportingGroups] = useState(false);
 
   useEffect(() => {
     loadGroupsData();
@@ -175,6 +249,97 @@ export function Grupos() {
     setIsFormOpen(false);
     setEditingGroup(null);
     setForm(emptyForm);
+  }
+
+  function buildExportOptions(filters = exportFilters) {
+    return {
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      groupId: filters.groupId || undefined,
+      level: filters.level,
+      includeStudents: filters.includeStudents,
+      includeAttendance: filters.includeAttendance,
+      includePayments: filters.includePayments,
+      includeInactiveStudents: filters.includeInactiveStudents,
+    };
+  }
+
+  async function loadExportPreview(filters = exportFilters) {
+    try {
+      setLoadingExportPreview(true);
+
+      const data = await getGroupsReportData(buildExportOptions(filters));
+      setExportPreview(getGroupsReportPreview(data));
+    } catch (error) {
+      console.error("Error cargando vista previa del reporte:", error);
+      alert("No se pudo cargar la vista previa del reporte.");
+    } finally {
+      setLoadingExportPreview(false);
+    }
+  }
+
+  async function openExportModal() {
+    const initialFilters = getDefaultExportFilters();
+
+    setExportFilters(initialFilters);
+    setIsExportModalOpen(true);
+    await loadExportPreview(initialFilters);
+  }
+
+  async function handleExportGroupsExcel() {
+    if (!exportFilters.startDate || !exportFilters.endDate) {
+      alert("Selecciona fecha inicial y fecha final.");
+      return;
+    }
+
+    if (exportFilters.startDate > exportFilters.endDate) {
+      alert("La fecha inicial no puede ser mayor a la fecha final.");
+      return;
+    }
+
+    try {
+      setExportingGroups(true);
+      await exportGroupsExcel(buildExportOptions());
+    } catch (error) {
+      console.error("Error exportando reporte de grupos:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "No se pudo exportar el reporte de grupos.",
+      );
+    } finally {
+      setExportingGroups(false);
+    }
+  }
+
+  function updateExportFilters(nextFilters: Partial<ExportFilters>) {
+    setExportFilters((current) => ({
+      ...current,
+      ...nextFilters,
+    }));
+  }
+
+  function applyTodayRange() {
+    const today = getTodayDate();
+    const nextFilters = {
+      ...exportFilters,
+      startDate: today,
+      endDate: today,
+    };
+
+    setExportFilters(nextFilters);
+    loadExportPreview(nextFilters);
+  }
+
+  function applyMonthRange() {
+    const nextFilters = {
+      ...exportFilters,
+      startDate: getCurrentMonthStart(),
+      endDate: getTodayDate(),
+    };
+
+    setExportFilters(nextFilters);
+    loadExportPreview(nextFilters);
   }
 
   async function handleSaveGroup() {
@@ -255,10 +420,17 @@ export function Grupos() {
           </p>
         </div>
 
-        <Button variant="gold" className="gap-2" onClick={openCreateModal}>
-          <Plus className="h-4 w-4" />
-          Agregar Grupo
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Button variant="outline" className="gap-2" onClick={openExportModal}>
+            <FileSpreadsheet className="h-4 w-4" />
+            Exportar Excel
+          </Button>
+
+          <Button variant="gold" className="gap-2" onClick={openCreateModal}>
+            <Plus className="h-4 w-4" />
+            Agregar Grupo
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -510,6 +682,373 @@ export function Grupos() {
                   <Save className="h-4 w-4" />
                 )}
                 {saving ? "Guardando..." : "Guardar grupo"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-yellow-500/20 bg-[#090909] shadow-2xl shadow-black/60">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-5">
+              <div>
+                <h2 className="text-2xl font-bold text-white">
+                  Exportar grupos
+                </h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Genera un reporte profesional con filtros, fechas, alumnos,
+                  asistencia y pagos.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(false)}
+                className="rounded-xl border border-zinc-800 p-2 text-zinc-400 transition hover:border-zinc-600 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 p-6 lg:grid-cols-[1fr_0.9fr]">
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-yellow-500/20 bg-gradient-to-br from-yellow-500/10 via-zinc-950 to-black p-5 text-center">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-yellow-500/30 bg-yellow-500/10">
+                    <FileSpreadsheet className="h-7 w-7 text-yellow-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white">TXS HUB</h3>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.25em] text-yellow-400">
+                    Reporte de grupos
+                  </p>
+                  <p className="mt-3 text-sm text-zinc-500">
+                    {formatShortDate(exportFilters.startDate)} -{" "}
+                    {formatShortDate(exportFilters.endDate)}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Grupos
+                    </p>
+                    <p className="mt-2 text-2xl font-bold text-white">
+                      {loadingExportPreview
+                        ? "..."
+                        : (exportPreview?.groupsCount ?? 0)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Alumnos
+                    </p>
+                    <p className="mt-2 text-2xl font-bold text-emerald-400">
+                      {loadingExportPreview
+                        ? "..."
+                        : (exportPreview?.studentsCount ?? 0)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Asistencias
+                    </p>
+                    <p className="mt-2 text-2xl font-bold text-sky-400">
+                      {loadingExportPreview
+                        ? "..."
+                        : (exportPreview?.attendanceCount ?? 0)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">
+                      Pagos
+                    </p>
+                    <p className="mt-2 text-xl font-bold text-yellow-400">
+                      {loadingExportPreview
+                        ? "..."
+                        : formatCurrency(exportPreview?.paymentsTotal || 0)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-white">
+                        Rango del reporte
+                      </h3>
+                      <p className="text-sm text-zinc-500">
+                        Las asistencias y pagos se filtran por fecha.
+                      </p>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => loadExportPreview()}
+                      disabled={loadingExportPreview}
+                    >
+                      {loadingExportPreview ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCcw className="h-4 w-4" />
+                      )}
+                      Vista previa
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="space-y-2">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+                        Desde
+                      </span>
+                      <input
+                        type="date"
+                        value={exportFilters.startDate}
+                        onChange={(event) =>
+                          updateExportFilters({ startDate: event.target.value })
+                        }
+                        className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-white outline-none [color-scheme:dark] focus:border-yellow-500"
+                      />
+                    </label>
+
+                    <label className="space-y-2">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+                        Hasta
+                      </span>
+                      <input
+                        type="date"
+                        value={exportFilters.endDate}
+                        onChange={(event) =>
+                          updateExportFilters({ endDate: event.target.value })
+                        }
+                        className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-white outline-none [color-scheme:dark] focus:border-yellow-500"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button variant="ghost" size="sm" onClick={applyTodayRange}>
+                      Hoy
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={applyMonthRange}>
+                      Este mes
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-5">
+                  <h3 className="mb-4 font-bold text-white">Filtros</h3>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="space-y-2">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+                        Grupo
+                      </span>
+                      <select
+                        value={exportFilters.groupId}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            groupId: event.target.value,
+                            level: "all",
+                          })
+                        }
+                        className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-white outline-none focus:border-yellow-500"
+                      >
+                        <option value="">Todos los grupos</option>
+                        {groups.map((group) => (
+                          <option key={group.id} value={group.id}>
+                            {group.name} · {group.schedule}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-2">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+                        Nivel
+                      </span>
+                      <select
+                        value={exportFilters.level}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            level: event.target.value as ExportFilters["level"],
+                            groupId: "",
+                          })
+                        }
+                        className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-white outline-none focus:border-yellow-500"
+                      >
+                        <option value="all">Todos los niveles</option>
+                        <option value="principiante">Principiante</option>
+                        <option value="intermedio">Intermedio</option>
+                        <option value="avanzado">Avanzado</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-3xl border border-zinc-800 bg-zinc-950/50 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-500/20 bg-yellow-500/10">
+                    <BarChart3 className="h-5 w-5 text-yellow-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white">
+                      El archivo incluirá
+                    </h3>
+                    <p className="text-sm text-zinc-500">
+                      Puedes activar o desactivar secciones.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                    <input
+                      type="checkbox"
+                      checked
+                      readOnly
+                      className="mt-1 accent-yellow-500"
+                    />
+                    <span>
+                      <span className="block font-semibold text-white">
+                        Dashboard
+                      </span>
+                      <span className="text-sm text-zinc-500">
+                        Resumen ejecutivo con métricas del rango.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                    <input
+                      type="checkbox"
+                      checked
+                      readOnly
+                      className="mt-1 accent-yellow-500"
+                    />
+                    <span>
+                      <span className="block font-semibold text-white">
+                        Grupos
+                      </span>
+                      <span className="text-sm text-zinc-500">
+                        Horarios, instructor, alumnos y resumen por grupo.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                    <input
+                      type="checkbox"
+                      checked={exportFilters.includeStudents}
+                      onChange={(event) =>
+                        updateExportFilters({
+                          includeStudents: event.target.checked,
+                        })
+                      }
+                      className="mt-1 accent-yellow-500"
+                    />
+                    <span>
+                      <span className="block font-semibold text-white">
+                        Alumnos por grupo
+                      </span>
+                      <span className="text-sm text-zinc-500">
+                        Contacto, membresía, anualidad y grupo asignado.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                    <input
+                      type="checkbox"
+                      checked={exportFilters.includeAttendance}
+                      onChange={(event) =>
+                        updateExportFilters({
+                          includeAttendance: event.target.checked,
+                        })
+                      }
+                      className="mt-1 accent-yellow-500"
+                    />
+                    <span>
+                      <span className="block font-semibold text-white">
+                        Asistencia
+                      </span>
+                      <span className="text-sm text-zinc-500">
+                        Presentes, faltas y retardos dentro del rango.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                    <input
+                      type="checkbox"
+                      checked={exportFilters.includePayments}
+                      onChange={(event) =>
+                        updateExportFilters({
+                          includePayments: event.target.checked,
+                        })
+                      }
+                      className="mt-1 accent-yellow-500"
+                    />
+                    <span>
+                      <span className="block font-semibold text-white">
+                        Pagos
+                      </span>
+                      <span className="text-sm text-zinc-500">
+                        Pagos del rango y total en MXN.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                    <input
+                      type="checkbox"
+                      checked={exportFilters.includeInactiveStudents}
+                      onChange={(event) =>
+                        updateExportFilters({
+                          includeInactiveStudents: event.target.checked,
+                        })
+                      }
+                      className="mt-1 accent-yellow-500"
+                    />
+                    <span>
+                      <span className="block font-semibold text-white">
+                        Incluir alumnos inactivos
+                      </span>
+                      <span className="text-sm text-zinc-500">
+                        Útil para auditorías o reportes históricos.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-zinc-800 px-6 py-5 sm:flex-row sm:justify-end">
+              <Button
+                variant="ghost"
+                onClick={() => setIsExportModalOpen(false)}
+                disabled={exportingGroups}
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                variant="gold"
+                className="gap-2"
+                onClick={handleExportGroupsExcel}
+                disabled={exportingGroups || loadingExportPreview}
+              >
+                {exportingGroups ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {exportingGroups ? "Generando..." : "Descargar reporte Excel"}
               </Button>
             </div>
           </div>
