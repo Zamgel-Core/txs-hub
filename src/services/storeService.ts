@@ -47,10 +47,19 @@ export type StoreSale = {
   } | null;
 };
 
+export type StoreInventoryMovementType =
+  | "sale"
+  | "stock_in"
+  | "stock_out"
+  | "adjustment"
+  | "gift"
+  | "internal_use"
+  | "waste";
+
 export type StoreInventoryMovement = {
   id: string;
   product_id: string;
-  movement_type: "sale" | "stock_in" | "stock_out" | "adjustment";
+  movement_type: StoreInventoryMovementType;
   quantity_delta: number;
   previous_stock: number;
   new_stock: number;
@@ -87,6 +96,8 @@ export type UpdateStoreProductPayload = Partial<CreateStoreProductPayload> & {
   isActive?: boolean;
 };
 
+export type StoreOutputType = "sale" | "gift" | "internal_use" | "waste";
+
 export type RegisterStoreSalePayload = {
   productId: string;
   quantity: number;
@@ -101,6 +112,16 @@ export type AdjustStoreInventoryPayload = {
   productId: string;
   quantityDelta: number;
   reason: string;
+  unitCost?: number | null;
+};
+
+export type RegisterStoreOutputPayload = {
+  outputType: Exclude<StoreOutputType, "sale">;
+  productId: string;
+  quantity: number;
+  recipientName: string;
+  outputDate: string;
+  notes: string;
   unitCost?: number | null;
 };
 
@@ -213,6 +234,25 @@ export async function getStoreInventoryMovements(limit = 25) {
   return (data || []) as unknown as StoreInventoryMovement[];
 }
 
+
+export async function getStoreInventoryMovementsByDateRange(
+  startDate: string,
+  endDate: string,
+  limit = 500,
+) {
+  const { data, error } = await supabase
+    .from("store_inventory_movements")
+    .select(movementSelect)
+    .gte("created_at", startDate)
+    .lt("created_at", endDate)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+
+  return (data || []) as unknown as StoreInventoryMovement[];
+}
+
 export async function getStoreBuyerStudents() {
   const { data, error } = await supabase
     .from("students")
@@ -250,6 +290,52 @@ export async function adjustStoreInventory(
   });
 
   if (error) throw new Error(error.message);
+}
+
+export function getStoreOutputTypeLabel(type: StoreOutputType | StoreInventoryMovement["movement_type"] | string) {
+  const labels: Record<string, string> = {
+    sale: "Venta",
+    gift: "Regalo",
+    internal_use: "Consumo interno",
+    waste: "Merma",
+    stock_in: "Entrada",
+    stock_out: "Salida",
+    adjustment: "Ajuste",
+  };
+
+  return labels[type] || type;
+}
+
+export function inferStoreMovementOutputType(movement: Pick<StoreInventoryMovement, "movement_type" | "reason">): StoreInventoryMovementType {
+  if (["gift", "internal_use", "waste"].includes(movement.movement_type)) {
+    return movement.movement_type as StoreInventoryMovementType;
+  }
+
+  const reason = (movement.reason || "").toLowerCase();
+
+  if (reason.includes("[regalo]")) return "gift";
+  if (reason.includes("[consumo interno]")) return "internal_use";
+  if (reason.includes("[merma]")) return "waste";
+
+  return movement.movement_type;
+}
+
+export async function registerStoreOutput(payload: RegisterStoreOutputPayload) {
+  const label = getStoreOutputTypeLabel(payload.outputType);
+  const recipient = payload.recipientName.trim();
+  const notes = payload.notes.trim();
+  const reasonParts = [`[${label}]`];
+
+  if (recipient) reasonParts.push(`Para: ${recipient}`);
+  if (notes) reasonParts.push(notes);
+  reasonParts.push(`Fecha: ${payload.outputDate}`);
+
+  await adjustStoreInventory({
+    productId: payload.productId,
+    quantityDelta: -Math.abs(payload.quantity),
+    reason: reasonParts.join(" · "),
+    unitCost: payload.unitCost ?? null,
+  });
 }
 
 
@@ -623,14 +709,7 @@ function getCategoryLabelForExcel(category: StoreCategory | string) {
 }
 
 function getMovementTypeLabel(type: StoreInventoryMovement["movement_type"] | string) {
-  const labels: Record<string, string> = {
-    sale: "Venta",
-    stock_in: "Entrada",
-    stock_out: "Salida",
-    adjustment: "Ajuste",
-  };
-
-  return labels[type] || type;
+  return getStoreOutputTypeLabel(type);
 }
 
 async function getImageBase64FromPublicPath(path: string) {
@@ -823,6 +902,15 @@ export async function exportStoreExcel(options: StoreExcelExportOptions = {}) {
   );
   const movementOutputs = movements.filter(
     (movement) => Number(movement.quantity_delta || 0) < 0,
+  );
+  const giftOutputs = movements.filter(
+    (movement) => inferStoreMovementOutputType(movement) === "gift",
+  );
+  const internalUseOutputs = movements.filter(
+    (movement) => inferStoreMovementOutputType(movement) === "internal_use",
+  );
+  const wasteOutputs = movements.filter(
+    (movement) => inferStoreMovementOutputType(movement) === "waste",
   );
 
   const rangeLabel =
@@ -1052,6 +1140,9 @@ export async function exportStoreExcel(options: StoreExcelExportOptions = {}) {
       ["Movimientos exportados", movements.length, integerFormat],
       ["Entradas inventario", movementEntries.length, integerFormat],
       ["Salidas inventario", movementOutputs.length, integerFormat],
+      ["Regalos", giftOutputs.reduce((sum, item) => sum + Math.abs(Number(item.quantity_delta || 0)), 0), integerFormat],
+      ["Consumo interno", internalUseOutputs.reduce((sum, item) => sum + Math.abs(Number(item.quantity_delta || 0)), 0), integerFormat],
+      ["Merma", wasteOutputs.reduce((sum, item) => sum + Math.abs(Number(item.quantity_delta || 0)), 0), integerFormat],
     ],
   ];
 
@@ -1291,7 +1382,7 @@ export async function exportStoreExcel(options: StoreExcelExportOptions = {}) {
       movement.store_products
         ? getStoreProductDisplayName(movement.store_products)
         : "Producto eliminado",
-      getMovementTypeLabel(movement.movement_type),
+      getMovementTypeLabel(inferStoreMovementOutputType(movement)),
       Number(movement.quantity_delta || 0),
       Number(movement.previous_stock || 0),
       Number(movement.new_stock || 0),
@@ -1350,12 +1441,13 @@ function getMonthRange() {
 export async function getStoreData() {
   const monthRange = getMonthRange();
 
-  const [products, recentSales, monthlySales, movements, students] =
+  const [products, recentSales, monthlySales, movements, monthlyMovements, students] =
     await Promise.all([
       getStoreProducts(),
       getRecentStoreSales(25),
       getStoreSalesByDateRange(monthRange.start, monthRange.end),
       getStoreInventoryMovements(25),
+      getStoreInventoryMovementsByDateRange(monthRange.start, monthRange.end),
       getStoreBuyerStudents(),
     ]);
 
@@ -1364,6 +1456,7 @@ export async function getStoreData() {
     recentSales,
     monthlySales,
     movements,
+    monthlyMovements,
     students,
   };
 }

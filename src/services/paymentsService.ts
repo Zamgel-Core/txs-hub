@@ -20,6 +20,14 @@ export type PaymentStudent = {
   is_active: boolean;
 };
 
+export type PaymentStaffProfile = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  is_active?: boolean | null;
+};
+
 export type PaymentRecord = {
   id: string;
   student_id: string;
@@ -37,6 +45,11 @@ export type PaymentRecord = {
   membership_start_date?: string | null;
   membership_end_date?: string | null;
   classes_per_day_snapshot?: number | null;
+  receipt_url?: string | null;
+  received_by_user_id?: string | null;
+  received_by_name?: string | null;
+  registered_by_user_id?: string | null;
+  registered_by_name?: string | null;
   students?: {
     full_name: string;
     email: string;
@@ -52,6 +65,11 @@ export type RegisterPaymentPayload = {
   membershipStartDate: string;
   membershipEndDate: string;
   notes: string;
+  receiptFile?: File | null;
+  receivedByUserId?: string | null;
+  receivedByName?: string | null;
+  registeredByUserId?: string | null;
+  registeredByName?: string | null;
 };
 
 export type StudentPaymentPortalData = {
@@ -69,7 +87,7 @@ export type StudentPaymentPortalData = {
 };
 
 const paymentSelect =
-  "id, student_id, payment_date, concept, method, amount, status, notes, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot, students(full_name, email)";
+  "id, student_id, payment_date, concept, method, amount, status, notes, receipt_url, received_by_user_id, received_by_name, registered_by_user_id, registered_by_name, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot, students(full_name, email)";
 export async function getPaymentStudents() {
   const { data, error } = await supabase
     .from("students")
@@ -114,6 +132,131 @@ export async function getPaymentsAdminData() {
   };
 }
 
+
+export async function getPaymentStaffProfiles(): Promise<PaymentStaffProfile[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, role, is_active")
+    .in("role", ["admin", "moderator", "staff"])
+    .eq("is_active", true)
+    .order("full_name", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || []) as PaymentStaffProfile[];
+}
+
+export async function getCurrentPaymentUser(): Promise<PaymentStaffProfile | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, role, is_active")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || null) as PaymentStaffProfile | null;
+}
+
+export async function uploadPaymentReceipt(params: {
+  studentId: string;
+  file: File;
+}): Promise<string> {
+  const extension = params.file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const safeExtension = ["jpg", "jpeg", "png", "webp", "heic", "heif"].includes(
+    extension,
+  )
+    ? extension
+    : "jpg";
+  const filePath = `${params.studentId}/receipt-${Date.now()}-${crypto.randomUUID()}.${safeExtension}`;
+
+  const { error } = await supabase.storage
+    .from("payment-receipts")
+    .upload(filePath, params.file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: params.file.type || "image/jpeg",
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const { data } = supabase.storage
+    .from("payment-receipts")
+    .getPublicUrl(filePath);
+
+  return data.publicUrl;
+}
+
+async function attachReceiptToLatestPayment(params: {
+  studentId: string;
+  paymentDate: string;
+  method: PaymentMethod;
+  amount: number;
+  receiptUrl?: string | null;
+  receivedByUserId?: string | null;
+  receivedByName?: string | null;
+  registeredByUserId?: string | null;
+  registeredByName?: string | null;
+}) {
+  const { data, error } = await supabase
+    .from("payments")
+    .select("id")
+    .eq("student_id", params.studentId)
+    .eq("payment_date", params.paymentDate)
+    .eq("method", params.method)
+    .eq("amount", params.amount)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data?.id) {
+    throw new Error("No se encontró el pago recién registrado para adjuntar el comprobante.");
+  }
+
+  const updatePayload: Record<string, string | null> = {};
+
+  if (params.receiptUrl) updatePayload.receipt_url = params.receiptUrl;
+  if (params.receivedByUserId !== undefined) {
+    updatePayload.received_by_user_id = params.receivedByUserId;
+  }
+  if (params.receivedByName !== undefined) {
+    updatePayload.received_by_name = params.receivedByName;
+  }
+  if (params.registeredByUserId !== undefined) {
+    updatePayload.registered_by_user_id = params.registeredByUserId;
+  }
+  if (params.registeredByName !== undefined) {
+    updatePayload.registered_by_name = params.registeredByName;
+  }
+
+  if (Object.keys(updatePayload).length === 0) return;
+
+  const { error: updateError } = await supabase
+    .from("payments")
+    .update(updatePayload)
+    .eq("id", data.id);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+}
+
 export async function registerAdminPayment(payload: RegisterPaymentPayload) {
   const { error } = await supabase.rpc("register_admin_payment", {
     p_student_id: payload.studentId,
@@ -129,6 +272,58 @@ export async function registerAdminPayment(payload: RegisterPaymentPayload) {
   if (error) {
     throw new Error(error.message);
   }
+
+  let receiptUrl: string | null = null;
+
+  if (payload.receiptFile) {
+    receiptUrl = await uploadPaymentReceipt({
+      studentId: payload.studentId,
+      file: payload.receiptFile,
+    });
+  }
+
+  if (
+    receiptUrl ||
+    payload.receivedByUserId !== undefined ||
+    payload.receivedByName !== undefined ||
+    payload.registeredByUserId !== undefined ||
+    payload.registeredByName !== undefined
+  ) {
+    await attachReceiptToLatestPayment({
+      studentId: payload.studentId,
+      paymentDate: payload.paymentDate,
+      method: payload.method,
+      amount: payload.amount,
+      receiptUrl,
+      receivedByUserId: payload.receivedByUserId || null,
+      receivedByName: payload.receivedByName || null,
+      registeredByUserId: payload.registeredByUserId || null,
+      registeredByName: payload.registeredByName || null,
+    });
+  }
+}
+
+export async function uploadReceiptForExistingPayment(params: {
+  paymentId: string;
+  studentId: string;
+  file: File;
+}): Promise<string> {
+  const receiptUrl = await uploadPaymentReceipt({
+    studentId: params.studentId,
+    file: params.file,
+  });
+
+  const { error } = await supabase
+    .from("payments")
+    .update({ receipt_url: receiptUrl })
+    .eq("id", params.paymentId)
+    .eq("student_id", params.studentId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return receiptUrl;
 }
 
 export async function getStudentPaymentHistory(studentId: string) {
@@ -173,7 +368,7 @@ export async function getStudentPaymentPortalData(
   const { data: paymentsData, error: paymentsError } = await supabase
     .from("payments")
     .select(
-      "id, student_id, payment_date, concept, method, amount, status, notes, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot",
+      "id, student_id, payment_date, concept, method, amount, status, notes, receipt_url, received_by_user_id, received_by_name, registered_by_user_id, registered_by_name, created_at, membership_plan_id, plan_slug_snapshot, plan_name_snapshot, suggested_amount, membership_start_date, membership_end_date, classes_per_day_snapshot",
     )
     .eq("student_id", studentData.id)
     .ilike("concept", "Membresía%")

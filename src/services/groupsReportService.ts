@@ -15,6 +15,7 @@ export type GroupsReportOptions = {
   includeAttendance: boolean;
   includePayments: boolean;
   includeInactiveStudents: boolean;
+  reportType?: "complete" | "attendance_payments";
 };
 
 export type GroupsReportGroup = {
@@ -66,6 +67,11 @@ export type GroupsReportPayment = {
   amount: number;
   status: string;
   notes: string | null;
+  receipt_url: string | null;
+  received_by_user_id: string | null;
+  received_by_name: string | null;
+  registered_by_user_id: string | null;
+  registered_by_name: string | null;
   membership_start_date: string | null;
   membership_end_date: string | null;
   created_at: string | null;
@@ -422,7 +428,7 @@ export async function getGroupsReportData(
     const { data: paymentsData, error: paymentsError } = await supabase
       .from("payments")
       .select(
-        "id, student_id, payment_date, concept, method, amount, status, notes, membership_start_date, membership_end_date, created_at",
+        "id, student_id, payment_date, concept, method, amount, status, notes, receipt_url, received_by_user_id, received_by_name, registered_by_user_id, registered_by_name, membership_start_date, membership_end_date, created_at",
       )
       .in("student_id", studentIds)
       .gte("payment_date", options.startDate)
@@ -467,7 +473,640 @@ export function getGroupsReportPreview(
   };
 }
 
+
+function getAttendanceQuickCode(status: string) {
+  const normalized = String(status || "").toLowerCase();
+
+  if (normalized === "presente") return "A";
+  if (normalized === "falta") return "F";
+  if (normalized === "retardo") return "R";
+
+  return status || "";
+}
+
+function normalizeReportDate(value?: string | null) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function getPaymentReference(payment: GroupsReportPayment) {
+  if (payment.receipt_url) return "Sí";
+  return `TXS-${String(payment.id || "").slice(0, 8).toUpperCase()}`;
+}
+
+function getPaymentReceiptLink(payment: GroupsReportPayment) {
+  return payment.receipt_url || "";
+}
+
+function getPaymentReceiverName(payment: GroupsReportPayment) {
+  return payment.received_by_name || payment.registered_by_name || "No especificado";
+}
+
+function getPaymentRegisteredName(payment: GroupsReportPayment) {
+  return payment.registered_by_name || "Sistema / Admin";
+}
+
+function addQuickReportHeader(
+  worksheet: ExcelJS.Worksheet,
+  title: string,
+  subtitle: string,
+) {
+  worksheet.mergeCells("A1:H1");
+  const titleCell = worksheet.getCell("A1");
+  titleCell.value = title;
+  titleCell.font = {
+    name: "Calibri",
+    size: 16,
+    bold: true,
+    color: { argb: TXS_EXCEL_COLORS.white },
+  };
+  titleCell.alignment = { vertical: "middle", horizontal: "center" };
+  titleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: TXS_EXCEL_COLORS.black },
+  };
+  worksheet.getRow(1).height = 30;
+
+  worksheet.mergeCells("A2:H2");
+  const subtitleCell = worksheet.getCell("A2");
+  subtitleCell.value = subtitle;
+  subtitleCell.font = {
+    name: "Calibri",
+    size: 11,
+    bold: true,
+    color: { argb: TXS_EXCEL_COLORS.zinc },
+  };
+  subtitleCell.alignment = { vertical: "middle", horizontal: "center" };
+  worksheet.getRow(2).height = 24;
+}
+
+async function exportGroupsQuickExcel(options: GroupsReportOptions) {
+  const data = await getGroupsReportData({
+    ...options,
+    includeStudents: true,
+    includeAttendance: true,
+    includePayments: true,
+  });
+  const groupMap = getGroupNameMap(data.groups);
+  const studentMap = getStudentMap(data.students);
+
+  const paymentsByStudentDate = data.payments.reduce<
+    Record<string, GroupsReportPayment[]>
+  >((acc, payment) => {
+    const key = `${payment.student_id}__${normalizeReportDate(payment.payment_date)}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(payment);
+    return acc;
+  }, {});
+
+  const usedPaymentIds = new Set<string>();
+  const quickRows: Array<{
+    schedule: string;
+    name: string;
+    date: string;
+    status: string;
+    amount: number | "";
+    method: string;
+    reference: string;
+    note: string;
+  }> = [];
+
+  data.attendance.forEach((record) => {
+    const student = studentMap[record.student_id];
+    const group = record.group_id ? groupMap[record.group_id] : null;
+    const date = normalizeReportDate(record.attendance_date);
+    const paymentKey = `${record.student_id}__${date}`;
+    const dayPayments = paymentsByStudentDate[paymentKey] || [];
+
+    dayPayments.forEach((payment) => usedPaymentIds.add(payment.id));
+
+    quickRows.push({
+      schedule: group?.schedule || "Sin horario",
+      name: student?.full_name || "Alumno no encontrado",
+      date: formatShortDate(date),
+      status: getAttendanceQuickCode(record.status),
+      amount: dayPayments.length
+        ? dayPayments.reduce(
+            (total, payment) => total + Number(payment.amount || 0),
+            0,
+          )
+        : "",
+      method: dayPayments.map((payment) => payment.method || "").filter(Boolean).join(" / "),
+      reference: dayPayments.map(getPaymentReference).join(" / "),
+      note: [
+        record.notes,
+        ...dayPayments.map((payment) => payment.notes || payment.concept),
+      ]
+        .filter(Boolean)
+        .join(" | "),
+    });
+  });
+
+  data.payments
+    .filter((payment) => !usedPaymentIds.has(payment.id))
+    .forEach((payment) => {
+      const student = studentMap[payment.student_id];
+      const group = student?.group_id ? groupMap[student.group_id] : null;
+
+      quickRows.push({
+        schedule: group?.schedule || "Sin horario",
+        name: student?.full_name || "Alumno no encontrado",
+        date: formatShortDate(normalizeReportDate(payment.payment_date)),
+        status: "PAGADO",
+        amount: Number(payment.amount || 0),
+        method: payment.method || "",
+        reference: getPaymentReference(payment),
+        note: payment.notes || payment.concept || "Pago registrado sin asistencia del día",
+      });
+    });
+
+  quickRows.sort((a, b) => {
+    const bySchedule = a.schedule.localeCompare(b.schedule, "es-MX");
+    if (bySchedule !== 0) return bySchedule;
+    const byName = a.name.localeCompare(b.name, "es-MX");
+    if (byName !== 0) return byName;
+    return a.date.localeCompare(b.date, "es-MX");
+  });
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Zamgel Core";
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet("Asistencia y pagos", {
+    properties: { defaultRowHeight: 22 },
+  });
+  worksheet.views = [{ state: "frozen", ySplit: 3 }];
+
+  setColumnWidths(worksheet, {
+    A: 18,
+    B: 34,
+    C: 16,
+    D: 14,
+    E: 14,
+    F: 18,
+    G: 22,
+    H: 40,
+  });
+
+  addQuickReportHeader(
+    worksheet,
+    "TXS HUB · REPORTE RÁPIDO DE ASISTENCIA/PAGOS",
+    `${formatShortDate(options.startDate)} - ${formatShortDate(options.endDate)} · A = Asistencia · F = Falta · R = Retardo`,
+  );
+
+  worksheet.addRow([
+    "Horario / turno",
+    "Nombre",
+    "Fecha",
+    "Estado",
+    "Monto",
+    "Método",
+    "Recibido por",
+    "Registrado por",
+    "Comprobante",
+    "Link comprobante",
+    "Nota",
+  ]);
+  styleHeaderRow(worksheet.getRow(3));
+
+  quickRows.forEach((row) => {
+    worksheet.addRow([
+      row.schedule,
+      row.name,
+      row.date,
+      row.status,
+      row.amount,
+      row.method,
+      row.reference,
+      row.note,
+    ]);
+  });
+
+  if (quickRows.length === 0) {
+    addNoDataMessage(
+      worksheet,
+      4,
+      "No hay asistencias o pagos en el rango seleccionado.",
+      8,
+    );
+  } else {
+    applyBodyStyle(worksheet, 4, quickRows.length + 3, 8);
+  }
+
+  worksheet.getColumn("E").numFmt = moneyFormat;
+  applyAutoFilter(worksheet, 3, 8);
+
+  const filename = `TXS_Asistencia_Pagos_${options.startDate}_${options.endDate}.xlsx`;
+  const buffer = await workbook.xlsx.writeBuffer();
+  downloadExcelBuffer(buffer, filename);
+}
+
+
+function getMondayOfWeek(dateValue: string) {
+  const date = new Date(`${dateValue}T00:00:00`);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function toDateInputValue(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getWeekNumber(dateValue: string) {
+  const date = new Date(`${dateValue}T00:00:00`);
+  const firstDay = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date.getTime() - firstDay.getTime()) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDay.getDay() + 1) / 7);
+}
+
+function getDayHeader(date: Date) {
+  const day = date.toLocaleDateString("es-MX", { weekday: "short" }).replace(".", "");
+  const dayNumber = date.toLocaleDateString("es-MX", { day: "2-digit" });
+  return `${day.charAt(0).toUpperCase()}${day.slice(1)} ${dayNumber}`;
+}
+
+function getAttendanceWeeklyCode(status: string) {
+  return getAttendanceQuickCode(status);
+}
+
+function addWeeklyReportTitle(
+  worksheet: ExcelJS.Worksheet,
+  title: string,
+  subtitle: string,
+  columnCount: number,
+) {
+  worksheet.mergeCells(1, 1, 1, columnCount);
+  const titleCell = worksheet.getCell(1, 1);
+  titleCell.value = title;
+  titleCell.font = {
+    name: "Calibri",
+    size: 16,
+    bold: true,
+    color: { argb: TXS_EXCEL_COLORS.white },
+  };
+  titleCell.alignment = { vertical: "middle", horizontal: "center" };
+  titleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: TXS_EXCEL_COLORS.black },
+  };
+  worksheet.getRow(1).height = 30;
+
+  worksheet.mergeCells(2, 1, 2, columnCount);
+  const subtitleCell = worksheet.getCell(2, 1);
+  subtitleCell.value = subtitle;
+  subtitleCell.font = {
+    name: "Calibri",
+    size: 11,
+    bold: true,
+    color: { argb: TXS_EXCEL_COLORS.zinc },
+  };
+  subtitleCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  worksheet.getRow(2).height = 26;
+}
+
+async function addWeeklyAttendanceSheet(
+  workbook: ExcelJS.Workbook,
+  options: GroupsReportOptions,
+) {
+  const weekStartDate = getMondayOfWeek(options.startDate);
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(weekStartDate, index));
+  const startDate = toDateInputValue(weekDays[0]);
+  const endDate = toDateInputValue(weekDays[6]);
+
+  const data = await getGroupsReportData({
+    ...options,
+    startDate,
+    endDate,
+    includeStudents: true,
+    includeAttendance: true,
+    includePayments: false,
+  });
+
+  const studentsByGroup = getStudentsByGroupMap(data.students);
+  const attendanceByStudentDate = data.attendance.reduce<Record<string, GroupsReportAttendance>>(
+    (acc, record) => {
+      const key = `${record.student_id}__${normalizeReportDate(record.attendance_date)}`;
+      acc[key] = record;
+      return acc;
+    },
+    {},
+  );
+
+  const worksheet = workbook.addWorksheet("Asistencia semanal", {
+    properties: { defaultRowHeight: 22 },
+  });
+  worksheet.views = [{ state: "frozen", ySplit: 4 }];
+
+  setColumnWidths(worksheet, {
+    A: 18,
+    B: 34,
+    C: 12,
+    D: 12,
+    E: 12,
+    F: 12,
+    G: 12,
+    H: 12,
+    I: 12,
+    J: 18,
+    K: 18,
+    L: 18,
+  });
+
+  addWeeklyReportTitle(
+    worksheet,
+    "TXS HUB · ASISTENCIA SEMANAL",
+    `Semana ${getWeekNumber(startDate)} · ${formatShortDate(startDate)} - ${formatShortDate(endDate)} · A = Asistencia · F = Falta · R = Retardo`,
+    12,
+  );
+
+  worksheet.addRow([
+    "Horario / turno",
+    "Nombre",
+    ...weekDays.map(getDayHeader),
+    "Asistencias",
+    "Faltas",
+    "Retardos",
+  ]);
+  styleHeaderRow(worksheet.getRow(3));
+
+  let totalPresents = 0;
+  let totalAbsences = 0;
+  let totalLate = 0;
+  let totalStudents = 0;
+
+  data.groups.forEach((group) => {
+    const groupStudents = studentsByGroup[group.id] || [];
+
+    if (data.groups.length > 1 && groupStudents.length > 0) {
+      const groupRow = worksheet.addRow([`${group.name} · ${group.schedule || "Sin horario"}`]);
+      worksheet.mergeCells(groupRow.number, 1, groupRow.number, 12);
+      groupRow.getCell(1).font = { name: "Calibri", bold: true, color: { argb: TXS_EXCEL_COLORS.white } };
+      groupRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: TXS_EXCEL_COLORS.dark } };
+    }
+
+    groupStudents.forEach((student) => {
+      const codes = weekDays.map((date) => {
+        const key = `${student.id}__${toDateInputValue(date)}`;
+        return getAttendanceWeeklyCode(attendanceByStudentDate[key]?.status || "");
+      });
+      const presents = codes.filter((code) => code === "A").length;
+      const absences = codes.filter((code) => code === "F").length;
+      const late = codes.filter((code) => code === "R").length;
+
+      totalStudents += 1;
+      totalPresents += presents;
+      totalAbsences += absences;
+      totalLate += late;
+
+      worksheet.addRow([
+        group.schedule || "Sin horario",
+        student.full_name,
+        ...codes,
+        presents,
+        absences,
+        late,
+      ]);
+    });
+  });
+
+  const lastDataRow = worksheet.lastRow?.number || 3;
+
+  if (totalStudents === 0) {
+    addNoDataMessage(worksheet, 4, "No hay alumnos para el filtro seleccionado.", 12);
+  } else {
+    applyBodyStyle(worksheet, 4, lastDataRow, 12);
+  }
+
+  const summaryStart = (worksheet.lastRow?.number || 4) + 2;
+  worksheet.mergeCells(summaryStart, 1, summaryStart, 12);
+  const summaryTitle = worksheet.getCell(summaryStart, 1);
+  summaryTitle.value = "Resumen semanal";
+  summaryTitle.font = { name: "Calibri", size: 12, bold: true, color: { argb: TXS_EXCEL_COLORS.black } };
+  summaryTitle.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TXS_EXCEL_COLORS.gold } };
+  summaryTitle.alignment = { horizontal: "center" };
+
+  const attendanceTotal = totalPresents + totalAbsences + totalLate;
+  const attendancePercent = attendanceTotal > 0 ? totalPresents / attendanceTotal : 0;
+  worksheet.addRow(["Alumnos", totalStudents, "Asistencias", totalPresents, "Faltas", totalAbsences, "Retardos", totalLate, "% asistencia", attendancePercent]);
+  const summaryRow = worksheet.getRow(summaryStart + 1);
+  summaryRow.getCell(10).numFmt = "0%";
+  summaryRow.eachCell((cell) => {
+    cell.font = { name: "Calibri", bold: true };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.border = { bottom: { style: "thin", color: { argb: "FFE5E7EB" } } };
+  });
+
+  worksheet.addRow(["Leyenda", "A = Asistencia", "F = Falta", "R = Retardo"]);
+  worksheet.getRow(summaryStart + 2).font = { name: "Calibri", italic: true, color: { argb: TXS_EXCEL_COLORS.zinc } };
+
+  applyAutoFilter(worksheet, 3, 12);
+}
+
+async function addPaymentsSheet(
+  workbook: ExcelJS.Workbook,
+  options: GroupsReportOptions,
+) {
+  const data = await getGroupsReportData({
+    ...options,
+    includeStudents: true,
+    includeAttendance: false,
+    includePayments: true,
+  });
+  const groupMap = getGroupNameMap(data.groups);
+  const studentMap = getStudentMap(data.students);
+
+  const worksheet = workbook.addWorksheet("Pagos", {
+    properties: { defaultRowHeight: 22 },
+  });
+  worksheet.views = [{ state: "frozen", ySplit: 3 }];
+  setColumnWidths(worksheet, {
+    A: 18,
+    B: 34,
+    C: 16,
+    D: 16,
+    E: 14,
+    F: 18,
+    G: 22,
+    H: 32,
+    I: 40,
+  });
+
+  addQuickReportHeader(
+    worksheet,
+    "TXS HUB · REPORTE DE PAGOS",
+    `${formatShortDate(options.startDate)} - ${formatShortDate(options.endDate)}`,
+  );
+
+  worksheet.addRow([
+    "Horario / turno",
+    "Nombre",
+    "Fecha",
+    "Estado",
+    "Monto",
+    "Método",
+    "Recibido por",
+    "Registrado por",
+    "Comprobante",
+    "Link comprobante",
+    "Nota",
+  ]);
+  styleHeaderRow(worksheet.getRow(3));
+
+  data.payments.forEach((payment, index) => {
+    const student = studentMap[payment.student_id];
+    const group = student?.group_id ? groupMap[student.group_id] : null;
+    worksheet.addRow([
+      group?.schedule || "Sin horario",
+      student?.full_name || "Alumno no encontrado",
+      formatShortDate(normalizeReportDate(payment.payment_date)),
+      String(payment.status || "PAGADO").toUpperCase(),
+      Number(payment.amount || 0),
+      payment.method || "",
+      getPaymentReceiverName(payment),
+      getPaymentRegisteredName(payment),
+      getPaymentReference(payment),
+      getPaymentReceiptLink(payment),
+      payment.notes || payment.concept || "",
+    ]);
+
+    if (payment.receipt_url) {
+      const cell = worksheet.getRow(index + 4).getCell(10);
+      cell.value = { text: "Abrir comprobante", hyperlink: payment.receipt_url };
+      cell.font = { color: { argb: TXS_EXCEL_COLORS.sky }, underline: true };
+    }
+  });
+
+  if (data.payments.length === 0) {
+    addNoDataMessage(worksheet, 4, "No hay pagos en el rango seleccionado.", 11);
+  } else {
+    applyBodyStyle(worksheet, 4, data.payments.length + 3, 11);
+  }
+
+  worksheet.getColumn("E").numFmt = moneyFormat;
+  applyAutoFilter(worksheet, 3, 11);
+}
+
+function addPaymentReceiptsSheet(
+  workbook: ExcelJS.Workbook,
+  data: GroupsReportData,
+) {
+  const paymentsWithReceipt = data.payments.filter((payment) => payment.receipt_url);
+  const groupMap = getGroupNameMap(data.groups);
+  const studentMap = getStudentMap(data.students);
+
+  const worksheet = workbook.addWorksheet("Comprobantes", {
+    properties: { defaultRowHeight: 22 },
+  });
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  setColumnWidths(worksheet, {
+    A: 18,
+    B: 34,
+    C: 28,
+    D: 16,
+    E: 14,
+    F: 18,
+    G: 24,
+    H: 24,
+    I: 64,
+    J: 40,
+  });
+
+  worksheet.addRow([
+    "Fecha pago",
+    "Alumno",
+    "Grupo",
+    "Método",
+    "Monto",
+    "Estado",
+    "Recibido por",
+    "Registrado por",
+    "Link comprobante",
+    "Notas",
+  ]);
+  styleHeaderRow(worksheet.getRow(1));
+
+  paymentsWithReceipt.forEach((payment) => {
+    const student = studentMap[payment.student_id];
+    const group = student?.group_id ? groupMap[student.group_id] : null;
+    const row = worksheet.addRow([
+      formatShortDate(payment.payment_date),
+      student?.full_name || "Alumno no encontrado",
+      group?.name || "Sin grupo",
+      payment.method || "Sin método",
+      Number(payment.amount || 0),
+      payment.status || "Sin estado",
+      getPaymentReceiverName(payment),
+      getPaymentRegisteredName(payment),
+      payment.receipt_url || "",
+      payment.notes || payment.concept || "",
+    ]);
+
+    const linkCell = row.getCell(9);
+    if (payment.receipt_url) {
+      linkCell.value = { text: "Abrir comprobante", hyperlink: payment.receipt_url };
+      linkCell.font = { color: { argb: TXS_EXCEL_COLORS.sky }, underline: true };
+    }
+  });
+
+  if (paymentsWithReceipt.length === 0) {
+    addNoDataMessage(worksheet, 2, "No hay comprobantes en este rango.", 10);
+  } else {
+    applyBodyStyle(worksheet, 2, paymentsWithReceipt.length + 1, 10);
+  }
+
+  worksheet.getColumn("E").numFmt = moneyFormat;
+  applyAutoFilter(worksheet, 1, 10);
+}
+
+async function exportGroupsAttendancePaymentsExcel(options: GroupsReportOptions) {
+  const weekStartDate = getMondayOfWeek(options.startDate);
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(weekStartDate, index));
+  const startDate = toDateInputValue(weekDays[0]);
+  const endDate = toDateInputValue(weekDays[6]);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Zamgel Core";
+  workbook.created = new Date();
+
+  const reportData = await getGroupsReportData({
+    ...options,
+    includeStudents: true,
+    includeAttendance: true,
+    includePayments: true,
+    startDate,
+    endDate,
+  });
+
+  await addPaymentsSheet(workbook, { ...options, startDate, endDate });
+  await addWeeklyAttendanceSheet(workbook, {
+    ...options,
+    startDate,
+    endDate,
+  });
+  addPaymentReceiptsSheet(workbook, reportData);
+
+  const filename = `TXS_Pagos_Asistencia_${startDate}_${endDate}.xlsx`;
+  const buffer = await workbook.xlsx.writeBuffer();
+  downloadExcelBuffer(buffer, filename);
+}
+
 export async function exportGroupsExcel(options: GroupsReportOptions) {
+  if (options.reportType === "attendance_payments") {
+    await exportGroupsAttendancePaymentsExcel(options);
+    return;
+  }
+
   const data = await getGroupsReportData(options);
   const preview = getGroupsReportPreview(data);
   const studentsByGroup = getStudentsByGroupMap(data.students);
@@ -888,7 +1527,11 @@ export async function exportGroupsExcel(options: GroupsReportOptions) {
       G: 16,
       H: 18,
       I: 18,
-      J: 34,
+      J: 24,
+      K: 24,
+      L: 18,
+      M: 56,
+      N: 34,
     });
     paymentsSheet.addRow([
       "Fecha pago",
@@ -900,6 +1543,10 @@ export async function exportGroupsExcel(options: GroupsReportOptions) {
       "Estado",
       "Inicio",
       "Vence",
+      "Recibido por",
+      "Registrado por",
+      "Comprobante",
+      "Link comprobante",
       "Notas",
     ]);
     styleHeaderRow(paymentsSheet.getRow(1));
@@ -922,17 +1569,28 @@ export async function exportGroupsExcel(options: GroupsReportOptions) {
         payment.membership_end_date
           ? formatShortDate(payment.membership_end_date)
           : "",
+        getPaymentReceiverName(payment),
+        getPaymentRegisteredName(payment),
+        payment.receipt_url ? "Sí" : "No",
+        payment.receipt_url || "",
         payment.notes || "",
       ]);
     });
 
     if (data.payments.length === 0) {
-      addNoDataMessage(paymentsSheet, 2, "No hay pagos en este rango.", 10);
+      addNoDataMessage(paymentsSheet, 2, "No hay pagos en este rango.", 14);
     } else {
-      applyBodyStyle(paymentsSheet, 2, data.payments.length + 1, 10);
+      applyBodyStyle(paymentsSheet, 2, data.payments.length + 1, 14);
+      data.payments.forEach((payment, index) => {
+        if (!payment.receipt_url) return;
+        const cell = paymentsSheet.getRow(index + 2).getCell(13);
+        cell.value = { text: "Abrir comprobante", hyperlink: payment.receipt_url };
+        cell.font = { color: { argb: TXS_EXCEL_COLORS.sky }, underline: true };
+      });
     }
     paymentsSheet.getColumn("F").numFmt = moneyFormat;
-    applyAutoFilter(paymentsSheet, 1, 10);
+    applyAutoFilter(paymentsSheet, 1, 12);
+    addPaymentReceiptsSheet(workbook, data);
   }
 
   const filename = `TXS_Grupos_${options.startDate}_${options.endDate}.xlsx`;

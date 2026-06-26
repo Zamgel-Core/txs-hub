@@ -6,15 +6,18 @@ import {
   Archive,
   Boxes,
   CalendarClock,
+  Coffee,
   CreditCard,
   DollarSign,
   FileSpreadsheet,
+  Gift,
   Droplets,
   Loader2,
   PackagePlus,
   Plus,
   RefreshCcw,
   TrendingUp,
+  Trash2,
   Zap,
   Save,
   Search,
@@ -30,10 +33,14 @@ import {
   createStoreProduct,
   exportStoreExcel,
   getStoreData,
+  getStoreOutputTypeLabel,
+  inferStoreMovementOutputType,
+  registerStoreOutput,
   registerStoreSale,
   StoreBuyerStudent,
   StoreCategory,
   StoreInventoryMovement,
+  StoreOutputType,
   StorePaymentMethod,
   StoreProduct,
   StoreSale,
@@ -113,6 +120,7 @@ type ProductForm = {
 };
 
 type SaleForm = {
+  outputType: StoreOutputType;
   productId: string;
   quantity: string;
   studentId: string;
@@ -160,6 +168,7 @@ const emptyProductForm: ProductForm = {
 
 function createSaleForm(productId = ""): SaleForm {
   return {
+    outputType: "sale",
     productId,
     quantity: "1",
     studentId: "",
@@ -185,6 +194,7 @@ export function Tienda() {
   const [recentSales, setRecentSales] = useState<StoreSale[]>([]);
   const [monthlySales, setMonthlySales] = useState<StoreSale[]>([]);
   const [movements, setMovements] = useState<StoreInventoryMovement[]>([]);
+  const [monthlyMovements, setMonthlyMovements] = useState<StoreInventoryMovement[]>([]);
   const [students, setStudents] = useState<StoreBuyerStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -268,8 +278,17 @@ export function Tienda() {
       ),
       todayProfit: getEstimatedProfit(todaySales),
       monthProfit: getEstimatedProfit(monthlySales),
+      giftsMonth: monthlyMovements
+        .filter((movement) => inferStoreMovementOutputType(movement) === "gift")
+        .reduce((sum, movement) => sum + Math.abs(Number(movement.quantity_delta || 0)), 0),
+      internalUseMonth: monthlyMovements
+        .filter((movement) => inferStoreMovementOutputType(movement) === "internal_use")
+        .reduce((sum, movement) => sum + Math.abs(Number(movement.quantity_delta || 0)), 0),
+      wasteMonth: monthlyMovements
+        .filter((movement) => inferStoreMovementOutputType(movement) === "waste")
+        .reduce((sum, movement) => sum + Math.abs(Number(movement.quantity_delta || 0)), 0),
     };
-  }, [activeProducts.length, monthlySales, products]);
+  }, [activeProducts.length, monthlyMovements, monthlySales, products]);
 
   const selectedSaleProduct = useMemo(
     () => products.find((product) => product.id === saleForm.productId) || null,
@@ -302,6 +321,7 @@ export function Tienda() {
       setRecentSales(data.recentSales);
       setMonthlySales(data.monthlySales);
       setMovements(data.movements);
+      setMonthlyMovements(data.monthlyMovements);
       setStudents(data.students);
     } catch (error) {
       console.error("Error cargando tienda:", error);
@@ -461,6 +481,7 @@ export function Tienda() {
 
   async function handleRegisterSale() {
     const quantity = Number(saleForm.quantity || 0);
+    const selectedProduct = products.find((product) => product.id === saleForm.productId) || null;
 
     if (!saleForm.productId) {
       alert("Selecciona un producto.");
@@ -472,23 +493,40 @@ export function Tienda() {
       return;
     }
 
-    if (!saleForm.studentId && !saleForm.buyerName.trim()) {
+    if (saleForm.outputType === "sale" && !saleForm.studentId && !saleForm.buyerName.trim()) {
       alert("Selecciona un alumno o escribe el nombre del comprador.");
+      return;
+    }
+
+    if (saleForm.outputType !== "sale" && !saleForm.notes.trim()) {
+      alert("Escribe el motivo de la salida.");
       return;
     }
 
     try {
       setSaving(true);
 
-      await registerStoreSale({
-        productId: saleForm.productId,
-        quantity,
-        studentId: saleForm.studentId || null,
-        buyerName: saleForm.buyerName,
-        paymentMethod: saleForm.paymentMethod,
-        saleDate: new Date(saleForm.saleDate).toISOString(),
-        notes: saleForm.notes,
-      });
+      if (saleForm.outputType === "sale") {
+        await registerStoreSale({
+          productId: saleForm.productId,
+          quantity,
+          studentId: saleForm.studentId || null,
+          buyerName: saleForm.buyerName,
+          paymentMethod: saleForm.paymentMethod,
+          saleDate: new Date(saleForm.saleDate).toISOString(),
+          notes: saleForm.notes,
+        });
+      } else {
+        await registerStoreOutput({
+          outputType: saleForm.outputType,
+          productId: saleForm.productId,
+          quantity,
+          recipientName: saleForm.buyerName,
+          outputDate: new Date(saleForm.saleDate).toISOString(),
+          notes: saleForm.notes,
+          unitCost: selectedProduct?.cost ?? null,
+        });
+      }
 
       setShowSaleModal(false);
       await loadStore();
@@ -497,7 +535,7 @@ export function Tienda() {
       alert(
         error instanceof Error
           ? error.message
-          : "No se pudo registrar la venta.",
+          : "No se pudo registrar la salida.",
       );
     } finally {
       setSaving(false);
@@ -623,7 +661,7 @@ export function Tienda() {
             </Button>
             <Button variant="gold" className="gap-2" onClick={() => openSaleModal()}>
               <Plus className="h-4 w-4" />
-              Registrar venta
+              Registrar salida
             </Button>
           </div>
         </div>
@@ -637,6 +675,9 @@ export function Tienda() {
           <StatCard label="Valor inventario" value={formatCurrency(stats.inventoryValue)} icon={Archive} />
           <StatCard label="Ventas mes" value={formatCurrency(stats.monthRevenue)} icon={CreditCard} tone="sky" />
           <StatCard label="Ganancia mes" value={formatCurrency(stats.monthProfit)} icon={TrendingUp} tone="emerald" />
+          <StatCard label="Regalos mes" value={stats.giftsMonth} icon={Gift} tone="sky" />
+          <StatCard label="Consumo mes" value={stats.internalUseMonth} icon={Coffee} tone="yellow" />
+          <StatCard label="Merma mes" value={stats.wasteMonth} icon={Trash2} tone={stats.wasteMonth > 0 ? "red" : "emerald"} />
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -883,6 +924,9 @@ export function Tienda() {
                         <p className="font-semibold text-white">
                           {movement.store_products?.name || "Producto"}
                         </p>
+                        <p className="text-xs font-semibold text-yellow-400">
+                          {getStoreOutputTypeLabel(inferStoreMovementOutputType(movement))}
+                        </p>
                         <p className="text-xs text-zinc-500">
                           {movement.reason || movement.movement_type}
                         </p>
@@ -1088,8 +1132,36 @@ export function Tienda() {
       )}
 
       {showSaleModal && (
-        <Modal title="Registrar venta" onClose={() => setShowSaleModal(false)}>
+        <Modal title="Registrar salida de inventario" onClose={() => setShowSaleModal(false)}>
           <div className="space-y-4">
+            <div>
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">Tipo de salida</span>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {([
+                  ["sale", "Venta"],
+                  ["gift", "Regalo"],
+                  ["internal_use", "Consumo interno"],
+                  ["waste", "Merma"],
+                ] as const).map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setSaleForm((current) => ({ ...current, outputType: type }))}
+                    className={`rounded-2xl border p-3 text-sm font-semibold transition ${
+                      saleForm.outputType === type
+                        ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-300"
+                        : "border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-600"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                Venta genera ingreso. Regalo, consumo interno y merma solo descuentan inventario.
+              </p>
+            </div>
+
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">Producto</span>
               <select
@@ -1114,23 +1186,29 @@ export function Tienda() {
                 value={saleForm.quantity}
                 onChange={(value) => setSaleForm((current) => ({ ...current, quantity: value }))}
               />
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">Método</span>
-                <select
-                  value={saleForm.paymentMethod}
-                  onChange={(event) => setSaleForm((current) => ({ ...current, paymentMethod: event.target.value as StorePaymentMethod }))}
-                  className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/50"
-                >
-                  <option value="efectivo">Efectivo</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="tarjeta">Tarjeta</option>
-                  <option value="otro">Otro</option>
-                </select>
-              </label>
+              {saleForm.outputType === "sale" ? (
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">Método</span>
+                  <select
+                    value={saleForm.paymentMethod}
+                    onChange={(event) => setSaleForm((current) => ({ ...current, paymentMethod: event.target.value as StorePaymentMethod }))}
+                    className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/50"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="tarjeta">Tarjeta</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+              ) : (
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 text-sm text-zinc-400">
+                  {getStoreOutputTypeLabel(saleForm.outputType)} sin cobro. No genera ingreso.
+                </div>
+              )}
             </div>
 
             <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">Alumno / comprador</span>
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">Alumno / comprador / responsable</span>
               <select
                 value={saleForm.studentId}
                 onChange={(event) => {
@@ -1144,7 +1222,7 @@ export function Tienda() {
                 }}
                 className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 text-white outline-none focus:border-yellow-500/50"
               >
-                <option value="">Venta general / escribir nombre manual</option>
+                <option value="">General / escribir nombre manual</option>
                 {students.map((student) => (
                   <option key={student.id} value={student.id}>
                     {student.full_name}
@@ -1155,10 +1233,10 @@ export function Tienda() {
             </label>
 
             <TextInput
-              label="Nombre del comprador"
+              label={saleForm.outputType === "sale" ? "Nombre del comprador" : "Responsable / a quién se entregó"}
               value={saleForm.buyerName}
               onChange={(value) => setSaleForm((current) => ({ ...current, buyerName: value }))}
-              placeholder="Ej. Abigail Ambriz"
+              placeholder={saleForm.outputType === "sale" ? "Ej. Abigail Ambriz" : "Ej. Maestro, alumno, cortesía"}
             />
 
             <TextInput
@@ -1176,7 +1254,9 @@ export function Tienda() {
                     {getProductDisplayName(selectedSaleProduct)} x {Number(saleForm.quantity || 0)}
                   </span>
                   <span className="text-xl font-black text-yellow-400">
-                    {formatCurrency(selectedSaleProduct.price * Number(saleForm.quantity || 0))}
+                    {saleForm.outputType === "sale"
+                      ? formatCurrency(selectedSaleProduct.price * Number(saleForm.quantity || 0))
+                      : `${getStoreOutputTypeLabel(saleForm.outputType)} · sin ingreso`}
                   </span>
                 </div>
               </div>
@@ -1186,14 +1266,16 @@ export function Tienda() {
               label="Notas"
               value={saleForm.notes}
               onChange={(value) => setSaleForm((current) => ({ ...current, notes: value }))}
-              placeholder="Ej. Color negro talla M, transferencia, comentario interno..."
+              placeholder={saleForm.outputType === "sale"
+                ? "Ej. Color negro talla M, transferencia, comentario interno..."
+                : "Ej. Merma por botella dañada, agua para maestro, cortesía para visita..."}
             />
 
             <div className="flex justify-end gap-3 pt-2">
               <Button variant="outline" onClick={() => setShowSaleModal(false)} disabled={saving}>Cancelar</Button>
               <Button variant="gold" onClick={handleRegisterSale} disabled={saving} className="gap-2">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Registrar venta
+                Registrar salida
               </Button>
             </div>
           </div>

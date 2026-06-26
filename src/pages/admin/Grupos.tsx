@@ -82,6 +82,7 @@ type ExportFilters = {
   includeAttendance: boolean;
   includePayments: boolean;
   includeInactiveStudents: boolean;
+  reportType: "complete" | "attendance_payments";
 };
 
 function getDateInputValue(date: Date) {
@@ -90,6 +91,37 @@ function getDateInputValue(date: Date) {
 
 function getTodayDate() {
   return getDateInputValue(new Date());
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getMondayOfWeek(date = new Date()) {
+  const next = new Date(date);
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function getWeekRange(date = new Date()) {
+  const start = getMondayOfWeek(date);
+  const end = addDays(start, 6);
+  return {
+    startDate: getDateInputValue(start),
+    endDate: getDateInputValue(end),
+  };
+}
+
+function getWeekNumber(dateValue: string) {
+  const date = new Date(`${dateValue}T00:00:00`);
+  const firstDay = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date.getTime() - firstDay.getTime()) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDay.getDay() + 1) / 7);
 }
 
 function getCurrentMonthStart() {
@@ -101,15 +133,18 @@ function getCurrentMonthStart() {
 }
 
 function getDefaultExportFilters(): ExportFilters {
+  const currentWeek = getWeekRange();
+
   return {
-    startDate: getCurrentMonthStart(),
-    endDate: getTodayDate(),
+    startDate: currentWeek.startDate,
+    endDate: currentWeek.endDate,
     groupId: "",
     level: "all",
     includeStudents: true,
     includeAttendance: true,
     includePayments: true,
     includeInactiveStudents: false,
+    reportType: "attendance_payments",
   };
 }
 
@@ -261,6 +296,7 @@ export function Grupos() {
       includeAttendance: filters.includeAttendance,
       includePayments: filters.includePayments,
       includeInactiveStudents: filters.includeInactiveStudents,
+      reportType: filters.reportType,
     };
   }
 
@@ -336,6 +372,32 @@ export function Grupos() {
       ...exportFilters,
       startDate: getCurrentMonthStart(),
       endDate: getTodayDate(),
+    };
+
+    setExportFilters(nextFilters);
+    loadExportPreview(nextFilters);
+  }
+
+  function applyCurrentWeekRange() {
+    const currentWeek = getWeekRange();
+    const nextFilters = {
+      ...exportFilters,
+      startDate: currentWeek.startDate,
+      endDate: currentWeek.endDate,
+    };
+
+    setExportFilters(nextFilters);
+    loadExportPreview(nextFilters);
+  }
+
+  function moveWeek(direction: -1 | 1) {
+    const baseDate = new Date(`${exportFilters.startDate}T00:00:00`);
+    const targetDate = addDays(baseDate, direction * 7);
+    const week = getWeekRange(targetDate);
+    const nextFilters = {
+      ...exportFilters,
+      startDate: week.startDate,
+      endDate: week.endDate,
     };
 
     setExportFilters(nextFilters);
@@ -697,8 +759,7 @@ export function Grupos() {
                   Exportar grupos
                 </h2>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Genera un reporte profesional con filtros, fechas, alumnos,
-                  asistencia y pagos.
+                  Genera el reporte completo de grupos o el reporte de pagos con asistencia semanal.
                 </p>
               </div>
 
@@ -774,13 +835,55 @@ export function Grupos() {
                 </div>
 
                 <div className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-5">
+                  <h3 className="mb-4 font-bold text-white">Tipo de reporte</h3>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => updateExportFilters({ reportType: "complete" })}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        exportFilters.reportType === "complete"
+                          ? "border-yellow-500 bg-yellow-500/10"
+                          : "border-zinc-800 bg-black/30 hover:border-zinc-700"
+                      }`}
+                    >
+                      <span className="block font-semibold text-white">
+                        Completo por grupos
+                      </span>
+                      <span className="mt-1 block text-sm text-zinc-500">
+                        Reporte completo de la academia organizado por hojas: dashboard, grupos, alumnos, asistencia y pagos.
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => updateExportFilters({ reportType: "attendance_payments" })}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        exportFilters.reportType === "attendance_payments"
+                          ? "border-yellow-500 bg-yellow-500/10"
+                          : "border-zinc-800 bg-black/30 hover:border-zinc-700"
+                      }`}
+                    >
+                      <span className="block font-semibold text-white">
+                        Pagos + asistencia semanal
+                      </span>
+                      <span className="mt-1 block text-sm text-zinc-500">
+                        Un solo Excel con 2 hojas: Pagos y Asistencia semanal con Lun-Dom y códigos A, F y R.
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-950/60 p-5">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-white">
                         Rango del reporte
                       </h3>
                       <p className="text-sm text-zinc-500">
-                        Las asistencias y pagos se filtran por fecha.
+                        {exportFilters.reportType === "attendance_payments"
+                          ? `Semana ${getWeekNumber(exportFilters.startDate)} · ${formatShortDate(exportFilters.startDate)} - ${formatShortDate(exportFilters.endDate)}`
+                          : "Las asistencias y pagos se filtran por fecha."}
                       </p>
                     </div>
 
@@ -836,6 +939,15 @@ export function Grupos() {
                     </Button>
                     <Button variant="ghost" size="sm" onClick={applyMonthRange}>
                       Este mes
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={applyCurrentWeekRange}>
+                      Semana actual
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => moveWeek(-1)}>
+                      Semana anterior
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => moveWeek(1)}>
+                      Semana siguiente
                     </Button>
                   </div>
                 </div>
@@ -901,130 +1013,191 @@ export function Grupos() {
                       El archivo incluirá
                     </h3>
                     <p className="text-sm text-zinc-500">
-                      Puedes activar o desactivar secciones.
+                      {exportFilters.reportType === "complete"
+                        ? "Puedes activar o desactivar secciones."
+                        : "El reporte seleccionado se exporta con las columnas necesarias."}
                     </p>
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
-                    <input
-                      type="checkbox"
-                      checked
-                      readOnly
-                      className="mt-1 accent-yellow-500"
-                    />
-                    <span>
-                      <span className="block font-semibold text-white">
-                        Dashboard
+                {exportFilters.reportType === "attendance_payments" ? (
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked
+                        readOnly
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Hoja 1: Pagos
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Horario, alumno, fecha, estado, monto, método, comprobante y nota.
+                        </span>
                       </span>
-                      <span className="text-sm text-zinc-500">
-                        Resumen ejecutivo con métricas del rango.
-                      </span>
-                    </span>
-                  </label>
+                    </label>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
-                    <input
-                      type="checkbox"
-                      checked
-                      readOnly
-                      className="mt-1 accent-yellow-500"
-                    />
-                    <span>
-                      <span className="block font-semibold text-white">
-                        Grupos
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked
+                        readOnly
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Hoja 2: Asistencia semanal
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Semana completa de lunes a domingo con códigos A, F y R.
+                        </span>
                       </span>
-                      <span className="text-sm text-zinc-500">
-                        Horarios, instructor, alumnos y resumen por grupo.
-                      </span>
-                    </span>
-                  </label>
+                    </label>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
-                    <input
-                      type="checkbox"
-                      checked={exportFilters.includeStudents}
-                      onChange={(event) =>
-                        updateExportFilters({
-                          includeStudents: event.target.checked,
-                        })
-                      }
-                      className="mt-1 accent-yellow-500"
-                    />
-                    <span>
-                      <span className="block font-semibold text-white">
-                        Alumnos por grupo
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked={exportFilters.includeInactiveStudents}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            includeInactiveStudents: event.target.checked,
+                          })
+                        }
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Incluir alumnos inactivos
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Útil si el reporte requiere historial completo.
+                        </span>
                       </span>
-                      <span className="text-sm text-zinc-500">
-                        Contacto, membresía, anualidad y grupo asignado.
+                    </label>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked
+                        readOnly
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Dashboard
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Resumen ejecutivo con métricas del rango.
+                        </span>
                       </span>
-                    </span>
-                  </label>
+                    </label>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
-                    <input
-                      type="checkbox"
-                      checked={exportFilters.includeAttendance}
-                      onChange={(event) =>
-                        updateExportFilters({
-                          includeAttendance: event.target.checked,
-                        })
-                      }
-                      className="mt-1 accent-yellow-500"
-                    />
-                    <span>
-                      <span className="block font-semibold text-white">
-                        Asistencia
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked
+                        readOnly
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Grupos
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Horarios, instructor, alumnos y resumen por grupo.
+                        </span>
                       </span>
-                      <span className="text-sm text-zinc-500">
-                        Presentes, faltas y retardos dentro del rango.
-                      </span>
-                    </span>
-                  </label>
+                    </label>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
-                    <input
-                      type="checkbox"
-                      checked={exportFilters.includePayments}
-                      onChange={(event) =>
-                        updateExportFilters({
-                          includePayments: event.target.checked,
-                        })
-                      }
-                      className="mt-1 accent-yellow-500"
-                    />
-                    <span>
-                      <span className="block font-semibold text-white">
-                        Pagos
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked={exportFilters.includeStudents}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            includeStudents: event.target.checked,
+                          })
+                        }
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Alumnos por grupo
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Contacto, membresía, anualidad y grupo asignado.
+                        </span>
                       </span>
-                      <span className="text-sm text-zinc-500">
-                        Pagos del rango y total en MXN.
-                      </span>
-                    </span>
-                  </label>
+                    </label>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
-                    <input
-                      type="checkbox"
-                      checked={exportFilters.includeInactiveStudents}
-                      onChange={(event) =>
-                        updateExportFilters({
-                          includeInactiveStudents: event.target.checked,
-                        })
-                      }
-                      className="mt-1 accent-yellow-500"
-                    />
-                    <span>
-                      <span className="block font-semibold text-white">
-                        Incluir alumnos inactivos
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked={exportFilters.includeAttendance}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            includeAttendance: event.target.checked,
+                          })
+                        }
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Asistencia
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Presentes, faltas y retardos dentro del rango.
+                        </span>
                       </span>
-                      <span className="text-sm text-zinc-500">
-                        Útil para auditorías o reportes históricos.
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked={exportFilters.includePayments}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            includePayments: event.target.checked,
+                          })
+                        }
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Pagos
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Pagos del rango y total en MXN.
+                        </span>
                       </span>
-                    </span>
-                  </label>
-                </div>
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked={exportFilters.includeInactiveStudents}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            includeInactiveStudents: event.target.checked,
+                          })
+                        }
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Incluir alumnos inactivos
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Útil para auditorías o reportes históricos.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1048,7 +1221,11 @@ export function Grupos() {
                 ) : (
                   <Download className="h-4 w-4" />
                 )}
-                {exportingGroups ? "Generando..." : "Descargar reporte Excel"}
+                {exportingGroups
+                  ? "Generando..."
+                  : exportFilters.reportType === "attendance_payments"
+                    ? "Descargar pagos + asistencia"
+                    : "Descargar reporte completo"}
               </Button>
             </div>
           </div>

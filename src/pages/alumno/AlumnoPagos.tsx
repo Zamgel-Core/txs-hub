@@ -9,6 +9,8 @@ import {
   Loader2,
   ReceiptText,
   ShieldCheck,
+  UploadCloud,
+  UserCheck,
   Wallet,
 } from "lucide-react";
 
@@ -21,6 +23,7 @@ import {
   getStudentPaymentPortalData,
   PaymentRecord,
   StudentPaymentPortalData,
+  uploadReceiptForExistingPayment,
 } from "@/src/services/paymentsService";
 
 type Student = NonNullable<StudentPaymentPortalData["student"]>;
@@ -61,6 +64,10 @@ function formatMoney(amount: number) {
   }).format(amount);
 }
 
+function getPaymentReceiverLabel(payment: PaymentRecord) {
+  return payment.received_by_name || payment.registered_by_name || "Administración";
+}
+
 function getStatusBadge(status: string) {
   const normalized = status.toLowerCase();
 
@@ -86,6 +93,7 @@ export function AlumnoPagos() {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [uploadingReceiptId, setUploadingReceiptId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPayments();
@@ -127,6 +135,40 @@ export function AlumnoPagos() {
       supabase.removeChannel(channel);
     };
   }, [student?.id]);
+
+  async function handleUploadReceipt(payment: PaymentRecord, file: File | null) {
+    if (!student || !file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Selecciona una imagen válida del comprobante.");
+      return;
+    }
+
+    if (file.size > 6 * 1024 * 1024) {
+      alert("El comprobante no debe pesar más de 6 MB.");
+      return;
+    }
+
+    try {
+      setUploadingReceiptId(payment.id);
+      await uploadReceiptForExistingPayment({
+        paymentId: payment.id,
+        studentId: student.id,
+        file,
+      });
+      await loadPayments();
+      alert("Comprobante subido correctamente.");
+    } catch (error) {
+      console.error("Error subiendo comprobante:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "No se pudo subir el comprobante.",
+      );
+    } finally {
+      setUploadingReceiptId(null);
+    }
+  }
 
   async function loadPayments() {
     try {
@@ -298,8 +340,10 @@ export function AlumnoPagos() {
                           <th className="px-6 py-4">Fecha</th>
                           <th className="px-6 py-4">Concepto</th>
                           <th className="px-6 py-4">Método</th>
+                          <th className="px-6 py-4">Recibió</th>
                           <th className="px-6 py-4 text-right">Monto</th>
                           <th className="px-6 py-4 text-center">Estado</th>
+                          <th className="px-6 py-4 text-center">Comprobante</th>
                         </tr>
                       </thead>
 
@@ -325,12 +369,54 @@ export function AlumnoPagos() {
                               {payment.method}
                             </td>
 
+                            <td className="px-6 py-4">
+                              <span className="inline-flex items-center gap-1 text-xs text-zinc-300">
+                                <UserCheck className="h-3.5 w-3.5 text-gold-400" />
+                                {getPaymentReceiverLabel(payment)}
+                              </span>
+                            </td>
+
                             <td className="px-6 py-4 text-right font-bold text-white">
                               {formatMoney(Number(payment.amount))}
                             </td>
 
                             <td className="px-6 py-4 text-center">
                               {getStatusBadge(payment.status)}
+                            </td>
+
+                            <td className="px-6 py-4 text-center">
+                              {payment.receipt_url ? (
+                                <a
+                                  href={payment.receipt_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center justify-center gap-1 text-xs font-semibold text-gold-400 hover:text-gold-300"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  Ver
+                                </a>
+                              ) : (
+                                <label className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-lg border border-gold-500/30 bg-gold-500/10 px-2.5 py-1.5 text-xs font-semibold text-gold-300 transition hover:bg-gold-500/20">
+                                  {uploadingReceiptId === payment.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <UploadCloud className="h-3.5 w-3.5" />
+                                  )}
+                                  Subir
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    disabled={uploadingReceiptId === payment.id}
+                                    onChange={(event) =>
+                                      handleUploadReceipt(
+                                        payment,
+                                        event.target.files?.[0] || null,
+                                      )
+                                    }
+                                  />
+                                </label>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -373,6 +459,50 @@ export function AlumnoPagos() {
                               {formatMoney(Number(payment.amount))}
                             </p>
                           </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+                          <p className="mb-1 text-xs text-zinc-500">Recibió / registró</p>
+                          <p className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-200">
+                            <UserCheck className="h-4 w-4 text-gold-400" />
+                            {getPaymentReceiverLabel(payment)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+                          <p className="mb-2 text-xs text-zinc-500">Comprobante</p>
+                          {payment.receipt_url ? (
+                            <a
+                              href={payment.receipt_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 text-sm font-semibold text-gold-400 hover:text-gold-300"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Ver comprobante
+                            </a>
+                          ) : (
+                            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-2 text-sm font-semibold text-gold-300 transition hover:bg-gold-500/20">
+                              {uploadingReceiptId === payment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <UploadCloud className="h-4 w-4" />
+                              )}
+                              Subir comprobante
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingReceiptId === payment.id}
+                                onChange={(event) =>
+                                  handleUploadReceipt(
+                                    payment,
+                                    event.target.files?.[0] || null,
+                                  )
+                                }
+                              />
+                            </label>
+                          )}
                         </div>
 
                         {payment.notes && (

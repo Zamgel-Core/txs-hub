@@ -13,6 +13,10 @@ import {
   Loader2,
   ReceiptText,
   Search,
+  UploadCloud,
+  ExternalLink,
+  X,
+  UserCheck,
   Wallet,
 } from "lucide-react";
 
@@ -24,6 +28,8 @@ import { Modal } from "@/src/components/ui/Modal";
 import { supabase } from "@/src/lib/supabase";
 
 import {
+  getCurrentPaymentUser,
+  getPaymentStaffProfiles,
   getPaymentsAdminData,
   getStudentPaymentHistory,
   registerAdminPayment,
@@ -31,6 +37,7 @@ import {
   MembershipType,
   PaymentMethod,
   PaymentRecord,
+  PaymentStaffProfile,
   PaymentStudent,
 } from "@/src/services/paymentsService";
 import {
@@ -168,6 +175,10 @@ const emptyPaymentForm = {
   membershipStartDate: today,
   membershipEndDate: today,
   notes: "",
+  receiptFile: null as File | null,
+  receiptPreviewUrl: "",
+  receivedByUserId: "",
+  receivedByNameManual: "",
 };
 
 function formatDate(date: string | null) {
@@ -187,6 +198,26 @@ function formatMoney(amount: number) {
     style: "currency",
     currency: "MXN",
   }).format(amount);
+}
+
+function getStaffDisplayName(staff?: PaymentStaffProfile | null) {
+  if (!staff) return "";
+  return staff.full_name || staff.email || "Usuario TXS";
+}
+
+function getRoleLabel(role?: string | null) {
+  if (role === "admin") return "Admin";
+  if (role === "moderator") return "Moderador";
+  if (role === "staff") return "Staff";
+  return "Personal";
+}
+
+function getPaymentReceiverLabel(payment: PaymentRecord) {
+  return payment.received_by_name || payment.registered_by_name || "No especificado";
+}
+
+function getPaymentRegisteredLabel(payment: PaymentRecord) {
+  return payment.registered_by_name || "Sistema / Admin";
 }
 
 function getDaysRemaining(date: string | null) {
@@ -343,6 +374,8 @@ export function Pagos() {
   const [students, setStudents] = useState<PaymentStudent[]>([]);
   const [recentPayments, setRecentPayments] = useState<PaymentRecord[]>([]);
   const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
+  const [staffProfiles, setStaffProfiles] = useState<PaymentStaffProfile[]>([]);
+  const [currentPaymentUser, setCurrentPaymentUser] = useState<PaymentStaffProfile | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<PaymentStudent | null>(
     null,
   );
@@ -403,14 +436,18 @@ export function Pagos() {
   async function loadPaymentData() {
     try {
       setLoading(true);
-      const [data, plans] = await Promise.all([
+      const [data, plans, staff, currentUser] = await Promise.all([
         getPaymentsAdminData(),
         getMembershipPlans(false),
+        getPaymentStaffProfiles(),
+        getCurrentPaymentUser(),
       ]);
 
       setStudents(data.students);
       setRecentPayments(data.recentPayments);
       setMembershipPlans(plans);
+      setStaffProfiles(staff);
+      setCurrentPaymentUser(currentUser);
     } catch (error) {
       console.error("Error cargando pagos:", error);
       alert("No se pudieron cargar los pagos.");
@@ -440,12 +477,17 @@ export function Pagos() {
     );
 
     setSelectedStudent(student);
+    const defaultReceiverId =
+      currentPaymentUser?.id || staffProfiles[0]?.id || "manual";
+
     setPaymentForm({
       ...emptyPaymentForm,
       membershipType: defaultPlan?.slug || "",
       amount: defaultPlan ? String(defaultPlan.price) : "",
       membershipStartDate: suggestedStartDate,
       membershipEndDate: suggestedEndDate,
+      receivedByUserId: defaultReceiverId,
+      receivedByNameManual: "",
     });
     setIsModalOpen(true);
   }
@@ -504,6 +546,41 @@ export function Pagos() {
     setHistoryPayments([]);
   }
 
+  function handleReceiptFileChange(file: File | null) {
+    if (!file) {
+      if (paymentForm.receiptPreviewUrl) {
+        URL.revokeObjectURL(paymentForm.receiptPreviewUrl);
+      }
+
+      setPaymentForm({
+        ...paymentForm,
+        receiptFile: null,
+        receiptPreviewUrl: "",
+      });
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Selecciona una imagen válida del comprobante.");
+      return;
+    }
+
+    if (file.size > 6 * 1024 * 1024) {
+      alert("El comprobante no debe pesar más de 6 MB.");
+      return;
+    }
+
+    if (paymentForm.receiptPreviewUrl) {
+      URL.revokeObjectURL(paymentForm.receiptPreviewUrl);
+    }
+
+    setPaymentForm({
+      ...paymentForm,
+      receiptFile: file,
+      receiptPreviewUrl: URL.createObjectURL(file),
+    });
+  }
+
   async function handleRegisterPayment() {
     if (!selectedStudent) return;
 
@@ -542,6 +619,19 @@ export function Pagos() {
       return;
     }
 
+    const selectedReceiver = staffProfiles.find(
+      (staff) => staff.id === paymentForm.receivedByUserId,
+    );
+    const receivedByName =
+      paymentForm.receivedByUserId === "manual"
+        ? paymentForm.receivedByNameManual.trim()
+        : getStaffDisplayName(selectedReceiver);
+
+    if (!receivedByName) {
+      alert("Indica quién recibió o registró el pago.");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -554,6 +644,14 @@ export function Pagos() {
         membershipStartDate: paymentForm.membershipStartDate,
         membershipEndDate: paymentForm.membershipEndDate,
         notes: paymentForm.notes,
+        receiptFile: paymentForm.receiptFile,
+        receivedByUserId:
+          paymentForm.receivedByUserId === "manual"
+            ? null
+            : paymentForm.receivedByUserId || null,
+        receivedByName,
+        registeredByUserId: currentPaymentUser?.id || null,
+        registeredByName: getStaffDisplayName(currentPaymentUser) || receivedByName,
       });
 
       setIsModalOpen(false);
@@ -1118,9 +1216,24 @@ export function Pagos() {
                         </p>
                       </div>
 
-                      <p className="mt-2 text-xs text-zinc-500">
-                        {formatDate(payment.payment_date)}
-                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+                        <span>{formatDate(payment.payment_date)}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <UserCheck className="h-3.5 w-3.5" />
+                          Recibió: {getPaymentReceiverLabel(payment)}
+                        </span>
+                        {payment.receipt_url && (
+                          <a
+                            href={payment.receipt_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 font-semibold text-gold-400 hover:text-gold-300"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Ver comprobante
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1234,6 +1347,33 @@ export function Pagos() {
                         </p>
                       </div>
 
+                      <div className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                        <div className="rounded-xl border border-zinc-800 bg-black/30 p-3">
+                          <p className="text-zinc-500">Recibió</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {getPaymentReceiverLabel(payment)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-zinc-800 bg-black/30 p-3">
+                          <p className="text-zinc-500">Registró</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {getPaymentRegisteredLabel(payment)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {payment.receipt_url && (
+                        <a
+                          href={payment.receipt_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex items-center gap-2 rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-2 text-xs font-semibold text-gold-300 transition hover:border-gold-500/60 hover:bg-gold-500/20"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Ver comprobante de transferencia
+                        </a>
+                      )}
+
                       {payment.notes && (
                         <p className="mt-3 rounded-xl border border-zinc-800 bg-black/30 p-3 text-xs text-zinc-400">
                           {payment.notes}
@@ -1318,6 +1458,55 @@ export function Pagos() {
                   <option value="otro">Otro</option>
                 </select>
               </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-gold-400" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Recibido / registrado por</p>
+                  <p className="text-xs text-zinc-500">Selecciona admin, moderador o staff que recibió el pago.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <select
+                  value={paymentForm.receivedByUserId}
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      receivedByUserId: event.target.value,
+                    })
+                  }
+                  className="h-12 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 text-white outline-none focus:border-gold-500/50"
+                >
+                  {staffProfiles.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {getStaffDisplayName(staff)} · {getRoleLabel(staff.role)}
+                    </option>
+                  ))}
+                  <option value="manual">Escribir nombre manualmente</option>
+                </select>
+
+                {paymentForm.receivedByUserId === "manual" && (
+                  <Input
+                    value={paymentForm.receivedByNameManual}
+                    onChange={(event) =>
+                      setPaymentForm({
+                        ...paymentForm,
+                        receivedByNameManual: event.target.value,
+                      })
+                    }
+                    placeholder="Nombre de quien recibió el pago"
+                  />
+                )}
+              </div>
+
+              {currentPaymentUser && (
+                <p className="mt-3 text-xs text-zinc-500">
+                  Sesión actual: {getStaffDisplayName(currentPaymentUser)} · {getRoleLabel(currentPaymentUser.role)}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1428,6 +1617,62 @@ export function Pagos() {
               </div>
             </div>
 
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    Comprobante de pago
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Ideal para transferencias. Se guardará junto al pago para reportes y conciliación bancaria.
+                  </p>
+                </div>
+
+                <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-gold-500/30 bg-gold-500/10 px-4 py-2 text-sm font-semibold text-gold-300 transition hover:border-gold-500/60 hover:bg-gold-500/20">
+                  <UploadCloud className="h-4 w-4" />
+                  Subir captura
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) =>
+                      handleReceiptFileChange(event.target.files?.[0] || null)
+                    }
+                  />
+                </label>
+              </div>
+
+              {paymentForm.receiptFile && (
+                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-zinc-800 bg-black/30 p-3 sm:flex-row sm:items-center">
+                  {paymentForm.receiptPreviewUrl && (
+                    <img
+                      src={paymentForm.receiptPreviewUrl}
+                      alt="Vista previa del comprobante"
+                      className="h-24 w-full rounded-lg object-cover sm:w-28"
+                    />
+                  )}
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {paymentForm.receiptFile.name}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {(paymentForm.receiptFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleReceiptFileChange(null)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-400 transition hover:border-red-500/50 hover:text-red-300"
+                  >
+                    <X className="h-4 w-4" />
+                    Quitar
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm text-zinc-400">
                 Notas / referencia
@@ -1464,7 +1709,7 @@ export function Pagos() {
                   <ReceiptText className="h-4 w-4" />
                 )}
 
-                {saving ? "Registrando..." : "Registrar pago"}
+                {saving ? "Registrando..." : paymentForm.receiptFile ? "Registrar pago con comprobante" : "Registrar pago"}
               </Button>
             </div>
           </div>
