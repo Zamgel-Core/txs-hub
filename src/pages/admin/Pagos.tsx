@@ -32,6 +32,7 @@ import {
   getPaymentStaffProfiles,
   getPaymentsAdminData,
   getStudentPaymentHistory,
+  getOverlappingMembershipPayment,
   registerAdminPayment,
   MembershipStatus,
   MembershipType,
@@ -315,6 +316,27 @@ function getDerivedMembershipStatus(student: PaymentStudent): MembershipStatus {
   return "vencida";
 }
 
+function hasDateRangeOverlap(
+  startA: string | null,
+  endA: string | null,
+  startB: string | null,
+  endB: string | null,
+) {
+  const parsedStartA = parseLocalDate(startA);
+  const parsedEndA = parseLocalDate(endA);
+  const parsedStartB = parseLocalDate(startB);
+  const parsedEndB = parseLocalDate(endB);
+
+  if (!parsedStartA || !parsedEndA || !parsedStartB || !parsedEndB) {
+    return false;
+  }
+
+  return (
+    parsedStartA.getTime() <= parsedEndB.getTime() &&
+    parsedEndA.getTime() >= parsedStartB.getTime()
+  );
+}
+
 function getStatusBadge(status: MembershipStatus) {
   if (status === "activa") return <Badge variant="success">Activa</Badge>;
   if (status === "pendiente") return <Badge variant="warning">Pendiente</Badge>;
@@ -581,6 +603,17 @@ export function Pagos() {
     });
   }
 
+  const overlapsCurrentMembership = Boolean(
+    selectedStudent &&
+      getDerivedMembershipStatus(selectedStudent) === "activa" &&
+      hasDateRangeOverlap(
+        paymentForm.membershipStartDate,
+        paymentForm.membershipEndDate,
+        selectedStudent.membership_start_date,
+        selectedStudent.membership_end_date,
+      ),
+  );
+
   async function handleRegisterPayment() {
     if (!selectedStudent) return;
 
@@ -616,6 +649,32 @@ export function Pagos() {
 
     if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
       alert("La fecha de vencimiento no puede ser menor a la fecha de inicio.");
+      return;
+    }
+
+    if (overlapsCurrentMembership) {
+      alert(
+        `No se puede registrar otro pago para la misma vigencia. La membresía actual de ${selectedStudent.full_name} cubre del ${formatDate(selectedStudent.membership_start_date)} al ${formatDate(selectedStudent.membership_end_date)}. Para cobrar la siguiente semana, usa una fecha de inicio posterior al vencimiento actual.`,
+      );
+      return;
+    }
+
+    try {
+      const overlappingPayment = await getOverlappingMembershipPayment({
+        studentId: selectedStudent.id,
+        membershipStartDate: paymentForm.membershipStartDate,
+        membershipEndDate: paymentForm.membershipEndDate,
+      });
+
+      if (overlappingPayment) {
+        alert(
+          `Este alumno ya tiene un pago registrado para una vigencia que se cruza con las fechas seleccionadas (${formatDate(overlappingPayment.membership_start_date || overlappingPayment.payment_date)} al ${formatDate(overlappingPayment.membership_end_date || overlappingPayment.payment_date)}). Ajusta el periodo antes de continuar.`,
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("Error verificando pagos duplicados:", error);
+      alert("No se pudo verificar si existe un pago para esta misma vigencia. Intenta de nuevo.");
       return;
     }
 
@@ -1586,6 +1645,20 @@ export function Pagos() {
               </div>
             </div>
 
+            {overlapsCurrentMembership && selectedStudent && (
+              <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-300">Pago bloqueado para esta misma vigencia</p>
+                    <p className="mt-1 text-xs leading-5 text-red-200/80">
+                      La membresía actual ya cubre del {formatDate(selectedStudent.membership_start_date)} al {formatDate(selectedStudent.membership_end_date)}. Puedes registrar el siguiente pago usando una fecha de inicio posterior al vencimiento actual.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -1700,7 +1773,7 @@ export function Pagos() {
               <Button
                 variant="gold"
                 className="gap-2"
-                disabled={saving || membershipPlans.length === 0}
+                disabled={saving || membershipPlans.length === 0 || overlapsCurrentMembership}
                 onClick={handleRegisterPayment}
               >
                 {saving ? (

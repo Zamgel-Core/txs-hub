@@ -257,6 +257,31 @@ async function attachReceiptToLatestPayment(params: {
   }
 }
 
+
+export async function getOverlappingMembershipPayment(params: {
+  studentId: string;
+  membershipStartDate: string;
+  membershipEndDate: string;
+}): Promise<PaymentRecord | null> {
+  const { data, error } = await supabase
+    .from("payments")
+    .select(paymentSelect)
+    .eq("student_id", params.studentId)
+    .ilike("concept", "Membresía%")
+    .in("status", ["pagado", "paid"])
+    .lte("membership_start_date", params.membershipEndDate)
+    .gte("membership_end_date", params.membershipStartDate)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || null) as PaymentRecord | null;
+}
+
 export async function registerAdminPayment(payload: RegisterPaymentPayload) {
   const { error } = await supabase.rpc("register_admin_payment", {
     p_student_id: payload.studentId,

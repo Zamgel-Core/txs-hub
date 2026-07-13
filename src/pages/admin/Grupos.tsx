@@ -82,6 +82,7 @@ type ExportFilters = {
   includeAttendance: boolean;
   includePayments: boolean;
   includeInactiveStudents: boolean;
+  includePendingPayments: boolean;
   reportType: "complete" | "attendance_payments";
 };
 
@@ -144,6 +145,7 @@ function getDefaultExportFilters(): ExportFilters {
     includeAttendance: true,
     includePayments: true,
     includeInactiveStudents: false,
+    includePendingPayments: false,
     reportType: "attendance_payments",
   };
 }
@@ -296,6 +298,7 @@ export function Grupos() {
       includeAttendance: filters.includeAttendance,
       includePayments: filters.includePayments,
       includeInactiveStudents: filters.includeInactiveStudents,
+      includePendingPayments: filters.includePendingPayments,
       reportType: filters.reportType,
     };
   }
@@ -1059,6 +1062,27 @@ export function Grupos() {
                     <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
                       <input
                         type="checkbox"
+                        checked={exportFilters.includePendingPayments}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            includePendingPayments: event.target.checked,
+                          })
+                        }
+                        className="mt-1 accent-yellow-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Incluir no pagados / pendientes
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Agrega a los alumnos sin pago registrado en el rango como “Pendiente de pago”.
+                        </span>
+                      </span>
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
                         checked={exportFilters.includeInactiveStudents}
                         onChange={(event) =>
                           updateExportFilters({
@@ -1172,6 +1196,28 @@ export function Grupos() {
                         </span>
                         <span className="text-sm text-zinc-500">
                           Pagos del rango y total en MXN.
+                        </span>
+                      </span>
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                      <input
+                        type="checkbox"
+                        checked={exportFilters.includePendingPayments}
+                        onChange={(event) =>
+                          updateExportFilters({
+                            includePendingPayments: event.target.checked,
+                          })
+                        }
+                        disabled={!exportFilters.includePayments}
+                        className="mt-1 accent-yellow-500 disabled:opacity-40"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">
+                          Incluir no pagados / pendientes
+                        </span>
+                        <span className="text-sm text-zinc-500">
+                          Agrega alumnos sin pago registrado al reporte de pagos.
                         </span>
                       </span>
                     </label>

@@ -15,6 +15,7 @@ export type GroupsReportOptions = {
   includeAttendance: boolean;
   includePayments: boolean;
   includeInactiveStudents: boolean;
+  includePendingPayments?: boolean;
   reportType?: "complete" | "attendance_payments";
 };
 
@@ -348,6 +349,14 @@ function getStudentMap(students: GroupsReportStudent[]) {
     },
     {},
   );
+}
+
+function getStudentsWithoutPayment(data: GroupsReportData) {
+  const paidStudentIds = new Set(
+    data.payments.map((payment) => payment.student_id),
+  );
+
+  return data.students.filter((student) => !paidStudentIds.has(student.id));
 }
 
 export async function getGroupsReportData(
@@ -925,6 +934,9 @@ async function addPaymentsSheet(
   });
   const groupMap = getGroupNameMap(data.groups);
   const studentMap = getStudentMap(data.students);
+  const pendingStudents = options.includePendingPayments
+    ? getStudentsWithoutPayment(data)
+    : [];
 
   const worksheet = workbook.addWorksheet("Pagos", {
     properties: { defaultRowHeight: 22 },
@@ -987,10 +999,29 @@ async function addPaymentsSheet(
     }
   });
 
-  if (data.payments.length === 0) {
+  pendingStudents.forEach((student) => {
+    const group = student.group_id ? groupMap[student.group_id] : null;
+    worksheet.addRow([
+      group?.schedule || "Sin horario",
+      student.full_name || "Alumno no encontrado",
+      "",
+      "PENDIENTE DE PAGO",
+      0,
+      "",
+      "",
+      "",
+      "No",
+      "",
+      `Sin pago registrado del ${formatShortDate(options.startDate)} al ${formatShortDate(options.endDate)}.`,
+    ]);
+  });
+
+  const paymentRowsCount = data.payments.length + pendingStudents.length;
+
+  if (paymentRowsCount === 0) {
     addNoDataMessage(worksheet, 4, "No hay pagos en el rango seleccionado.", 11);
   } else {
-    applyBodyStyle(worksheet, 4, data.payments.length + 3, 11);
+    applyBodyStyle(worksheet, 4, paymentRowsCount + 3, 11);
   }
 
   worksheet.getColumn("E").numFmt = moneyFormat;
@@ -1513,6 +1544,9 @@ export async function exportGroupsExcel(options: GroupsReportOptions) {
   }
 
   if (options.includePayments) {
+    const pendingStudents = options.includePendingPayments
+      ? getStudentsWithoutPayment(data)
+      : [];
     const paymentsSheet = workbook.addWorksheet("Pagos", {
       properties: { defaultRowHeight: 22 },
     });
@@ -1577,10 +1611,36 @@ export async function exportGroupsExcel(options: GroupsReportOptions) {
       ]);
     });
 
-    if (data.payments.length === 0) {
+    pendingStudents.forEach((student) => {
+      const group = student.group_id ? groupMap[student.group_id] : null;
+      paymentsSheet.addRow([
+        "",
+        student.full_name || "Alumno no encontrado",
+        group?.name || "Sin grupo",
+        "Membresía",
+        "",
+        0,
+        "PENDIENTE DE PAGO",
+        student.membership_start_date
+          ? formatShortDate(student.membership_start_date)
+          : "",
+        student.membership_end_date
+          ? formatShortDate(student.membership_end_date)
+          : "",
+        "",
+        "",
+        "No",
+        "",
+        `Sin pago registrado del ${formatShortDate(options.startDate)} al ${formatShortDate(options.endDate)}.`,
+      ]);
+    });
+
+    const paymentRowsCount = data.payments.length + pendingStudents.length;
+
+    if (paymentRowsCount === 0) {
       addNoDataMessage(paymentsSheet, 2, "No hay pagos en este rango.", 14);
     } else {
-      applyBodyStyle(paymentsSheet, 2, data.payments.length + 1, 14);
+      applyBodyStyle(paymentsSheet, 2, paymentRowsCount + 1, 14);
       data.payments.forEach((payment, index) => {
         if (!payment.receipt_url) return;
         const cell = paymentsSheet.getRow(index + 2).getCell(13);
